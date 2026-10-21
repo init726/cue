@@ -37,7 +37,7 @@ flutter run --release -d 00008140-000E65980C10801C --dart-define=CUE_API_URL=htt
 
 ## 서버 배포 (Render)
 
-저장소 루트의 `render.yaml`은 싱가포르 지역의 무료 Node 웹 서비스를 설정합니다. Render Dashboard에서 GitHub 저장소 `1NlT/cue`의 Blueprint를 만들고, 생성 화면에서 `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`를 환경변수로 입력합니다. 키 값은 Git에 넣지 않습니다. 무료 서비스는 유휴 시 잠들어 첫 요청이 지연될 수 있으므로 앱은 서버 시작을 기다릴 수 있어야 합니다.
+저장소 루트의 `render.yaml`은 싱가포르 지역의 무료 Node 웹 서비스를 설정합니다. Render Dashboard에서 GitHub 저장소 `1NlT/cue`의 Blueprint를 만들고, 생성 화면에서 `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`를 환경변수로 입력합니다. 공연 추천에 KOPIS를 쓰려면 `KOPIS_API_KEY`도 입력합니다(선택). 키 값은 Git에 넣지 않습니다. 무료 서비스는 유휴 시 잠들어 첫 요청이 지연될 수 있으므로 앱은 서버 시작을 기다릴 수 있어야 합니다.
 
 배포가 끝나면 `https://<배포된 호스트>/health`가 `{"ok":true}`를 반환하는지 확인합니다. 앱은 빌드 시 `--dart-define=CUE_API_URL=https://<배포된 호스트>`를 지정하고, 기존 Supabase URL 및 publishable key도 그대로 전달해 다시 설치합니다. 기존 설치 앱에 포함된 Mac `.local` 주소는 서버 배포만으로 바뀌지 않습니다. `CUE_CLOUD_REQUIRED=1`은 배포 필수 키가 빠진 경우 시작을 막고, 로컬 토큰으로 임시 SQLite 계정이 생성되는 것을 막습니다. SQLite 파일은 호스트 재시작 시 사라질 수 있으므로 사용자 데이터는 Supabase를 사용합니다.
 
@@ -54,7 +54,13 @@ SQL 마이그레이션을 프로젝트 SQL Editor에서 실행하고 익명 로�
 
 ## 추천 행사 등록
 
-추천은 확인 가능한 행사 목록을 기반으로 합니다. 목록이 비어 있으면 앱은 빈 상태를 보여주며, 임의의 행사를 만들어 추천하지 않습니다. 관리자가 `CATALOG_ADMIN_TOKEN` 환경변수를 설정한 뒤 실제 행사를 등록할 수 있습니다.
+추천은 확인 가능한 행사 목록을 기반으로 합니다. 목록이 비어 있으면 앱은 빈 상태를 보여주며, 임의의 행사를 만들어 추천하지 않습니다. Supabase 사용자의 추천이 비었거나 새로고침하면 서버가 가장 관심 있는 분야의 공식 출처에서 행사를 찾아 목록에 더합니다. 아직 관심 분야가 없는 사용자는 찾은 행사가 추천되지 않으므로 검색하지 않습니다.
+
+- 전시: 서울시립미술관 공식 페이지를 직접 읽고, OpenAI 웹 검색으로 국립현대미술관·서울문화포털 상세 페이지를 함께 찾습니다. 상설 전시는 다음 3주 안의 날짜에 14:00~16:00 추천 방문 시간을 정합니다.
+- 음악·공연: `KOPIS_API_KEY`(공연예술통합전산망 [Open API](https://kopis.or.kr/por/cs/openapi/openApiInfo.do?menuId=MNU_00074) 서비스 키)가 있으면 앞으로 30일 안에 열리는 서울 공연을 가져와 내일 이후 가장 가까운 회차를 일정으로 씁니다. 키가 없거나 결과가 없으면 웹 검색을 씁니다.
+- 그 밖의 분야: OpenAI 웹 검색. 검색 출처에 실제로 있는 공식 상세 페이지 URL만 받아들입니다.
+
+관리자가 `CATALOG_ADMIN_TOKEN` 환경변수를 설정한 뒤 실제 행사를 등록할 수도 있습니다.
 
 ```bash
 curl -X POST http://localhost:8787/v1/catalog/import \

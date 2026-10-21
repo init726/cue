@@ -1,5 +1,5 @@
 export const formats = Object.freeze(['토론회', '강연', '세미나', '전시', '공연', '해커톤', '공모전', '체험', '기타']);
-export const domains = Object.freeze(['AI', '교육', '정책', '소프트웨어', '로봇', '과학', '미술', '음악', '디자인', '문화', '창업', '기타']);
+export const domains = Object.freeze(['AI', '교육', '정책', '소프트웨어', '로봇', '과학', '미술', '음악', '공연', '디자인', '문화', '창업', '기타']);
 
 const clues = {
   AI: /\bAI\b|인공지능|머신러닝|생성형/i,
@@ -10,6 +10,7 @@ const clues = {
   과학: /과학|연구|물리|생명공학/,
   미술: /미술|개인전|작가|회화|조각|현대미술|갤러리/,
   음악: /음악|콘서트|클래식|재즈|오케스트라/,
+  공연: /공연|연극|뮤지컬|무용|발레|오페라|국악|마술/,
   디자인: /디자인|시각예술|그래픽/,
   문화: /문화|예술|전시|공연/,
   창업: /창업|스타트업|벤처/,
@@ -26,6 +27,7 @@ export function classifyEvent(event) {
   // Legacy categories may describe the event's form, so use them only if content gives no clue.
   if (!inferred.length && ['교육', '음악', '미술', '디자인'].includes(event.category)) inferred.push(event.category);
   if (!inferred.length && /미술 전시|사진 전시/.test(event.category || '')) inferred.push('미술', '문화');
+  if (!inferred.length && ['공연', '뮤지컬', '연극', '무용'].includes(event.category)) inferred.push('공연', '문화');
   const explicit = Array.isArray(event.domains) ? event.domains.filter((value) => domains.includes(value) && value !== '기타') : [];
   const selectedDomains = [...new Set(explicit.length ? explicit : inferred)];
   const inferredFormat = formats.find((format) => format !== '기타' && formatClues[format]?.test(text)) ||
