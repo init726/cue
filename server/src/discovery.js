@@ -1,10 +1,13 @@
 import { categories, categoryGroup } from './categories.js';
 import { validateSavedEvent } from './domain.js';
 import { formats, domains } from './classification.js';
+import { discoverSemaExhibitions } from './sema.js';
+import { discoverKopisPerformances } from './kopis.js';
 
 const maxDiscoveryAge = 180 * 86400000;
 const officialDomains = {
-  전시: ['sema.seoul.go.kr', 'mmca.go.kr', 'culture.seoul.go.kr'],
+  // 서울시립미술관은 sema.js가 공식 페이지를 직접 읽으므로 웹 검색에서는 다른 기관만 찾는다.
+  전시: ['mmca.go.kr', 'culture.seoul.go.kr'],
   음악: ['kopis.or.kr', 'sac.or.kr', 'sejongpac.or.kr', 'culture.seoul.go.kr'],
   공연: ['kopis.or.kr', 'sac.or.kr', 'sejongpac.or.kr', 'culture.seoul.go.kr'],
 };
@@ -20,21 +23,34 @@ const normalizeUrl = (value) => {
   } catch { return null; }
 };
 
-export function discoveryTopic(interests) {
-  return [...interests.entries()]
-    .filter(([key, score]) => score > 0 && key.startsWith('domain:'))
-    .sort((a, b) => b[1] - a[1])
-    .map(([key]) => ({ AI: '기술', 소프트웨어: '기술', 로봇: '기술', 과학: '기술', 정책: '교육', 교육: '교육', 창업: '기술', 미술: '미술 전시', 음악: '음악', 디자인: '전시', 문화: '전시' })[key.slice(7)])
-    .find((topic) => topic && categories.includes(topic)) || null;
+// www.mmca.go.kr처럼 공식 도메인의 하위 도메인도 같은 기관으로 본다.
+const isWithin = (value, domain) => {
+  const host = new URL(value).hostname;
+  return host === domain || host.endsWith(`.${domain}`);
+};
+
+const topicsByDomain = { AI: ['기술'], 소프트웨어: ['기술'], 로봇: ['기술'], 과학: ['기술'], 창업: ['기술'],
+  정책: ['교육'], 교육: ['교육'], 미술: ['미술 전시'], 디자인: ['전시'], 음악: ['음악'], 공연: ['공연'], 문화: ['전시', '공연'] };
+
+// 관심 상위 세 분야를 검색 주제로 바꾼다. 같은 주제로 묶이는 분야는 subject에 함께 담는다.
+export function discoveryTopics(interests) {
+  const topics = [];
+  const ranked = [...interests.entries()]
+    .filter(([key, score]) => score > 0 && key.startsWith('domain:') && domains.includes(key.slice(7)) && key !== 'domain:기타')
+    .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([key]) => key.slice(7));
+  for (const domain of ranked) {
+    for (const topic of topicsByDomain[domain] || []) {
+      if (!categories.includes(topic)) continue;
+      const found = topics.find((item) => item.topic === topic);
+      if (found) found.domains.push(domain);
+      else topics.push({ topic, domains: [domain] });
+    }
+  }
+  return topics.map(({ topic, domains: matched }) => ({ topic, subject: matched.join('·') }));
 }
 
-export function discoverySubject(interests) {
-  return [...interests.entries()]
-    .filter(([key, score]) => score > 0 && key.startsWith('domain:'))
-    .sort((a, b) => b[1] - a[1])
-    .map(([key]) => key.slice(7))
-    .filter((domain) => domains.includes(domain) && domain !== '기타')
-    .slice(0, 3).join('·');
+export function discoveryTopic(interests) {
+  return discoveryTopics(interests)[0]?.topic || null;
 }
 
 export function verifiedDiscoveries(response, currentTime = Date.now()) {
@@ -103,5 +119,29 @@ export async function discoverEvents(topic, { fetchImpl = fetch, currentTime = D
   }
   return verifiedDiscoveries(await response.json(), currentTime)
     .filter((event) => categoryGroup(event.category) === family &&
-      (!officialDomains[family] || officialDomains[family].includes(new URL(event.sourceUrl).hostname)));
+      (!officialDomains[family] || officialDomains[family].some((domain) => isWithin(event.sourceUrl, domain))));
+}
+
+// 분야별로 공식 출처를 먼저 쓰고, 부족할 때만 웹 검색을 쓴다.
+export async function discoverCatalogEvents(topic, { subject = topic, fetchImpl = fetch, currentTime = Date.now() } = {}) {
+  const family = categoryGroup(topic);
+  const sources = [];
+  if (family === '전시') {
+    sources.push(discoverSemaExhibitions({ fetchImpl, currentTime }), discoverEvents(topic, { fetchImpl, currentTime, subject }));
+  } else if (process.env.KOPIS_API_KEY && ['음악', '공연'].includes(family)) {
+    try {
+      const performances = await discoverKopisPerformances(family, { fetchImpl, currentTime });
+      if (performances.length) return performances;
+    } catch (error) {
+      console.error('KOPIS discovery:', error instanceof Error ? error.message : error);
+    }
+    sources.push(discoverEvents(topic, { fetchImpl, currentTime, subject }));
+  } else {
+    sources.push(discoverEvents(topic, { fetchImpl, currentTime, subject }));
+  }
+  const results = await Promise.allSettled(sources);
+  const found = results.filter((result) => result.status === 'fulfilled').flatMap((result) => result.value);
+  if (!found.length && results.every((result) => result.status === 'rejected')) throw results[0].reason;
+  const urls = new Set();
+  return found.filter((event) => !urls.has(event.sourceUrl) && urls.add(event.sourceUrl));
 }

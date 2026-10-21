@@ -1846,7 +1846,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         _empty(
           Icons.explore_outlined,
           '아직 추천할 행사가 없어요',
-          '아래로 당겨서 새로고침해 보세요.',
+          '행사 포스터를 저장하면 관심 분야에 맞는 행사를 찾아드려요. 아래로 당겨서 새로고침할 수도 있어요.',
         ),
       for (final event in recommended) ...[
         _eventTile(event, recommended: true),

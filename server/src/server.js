@@ -5,11 +5,10 @@ import { categories, cleanExtraction, validateSavedEvent } from './domain.js';
 import { documentInput } from './document.js';
 import { store } from './store.js';
 import { CloudStore, importCloudCatalog } from './cloud-store.js';
-import { discoverEvents, discoveryTopic, discoverySubject } from './discovery.js';
-import { categoryGroup } from './categories.js';
-import { discoverSemaExhibitions } from './sema.js';
+import { discoverCatalogEvents, discoveryTopics } from './discovery.js';
 import { formats, domains } from './classification.js';
 import { demoEvents, demoEventCount, isDemoEvent } from './demo-catalog.js';
+import { exploreEnabled } from './personalization.js';
 
 const port = Number(process.env.PORT || 8787);
 const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
@@ -26,22 +25,23 @@ const fallbackTopics = ['기술', '음악', '공연', '강연', '워크숍', '�
 
 async function discoverFor(data, userId) {
   const interests = new Map((await data.interests(userId)).map((row) => [row.interestKey, row.score]));
-  // 관심사가 없으면 여러 주제를 돌아가며 찾아 새로고침할 때마다 다른 행사가 들어오게 한다.
-  const fresh = (candidate) => { const job = discoveryJobs.get(`${candidate}:${candidate}`);
-    return job && Date.now() - job.startedAt < job.retryAfter; };
-  const topic = discoveryTopic(interests) || fallbackTopics.find((candidate) => !fresh(candidate)) || null;
-  if (!topic) return false;
-  const subject = discoverySubject(interests) || topic;
-  const jobKey = `${topic}:${subject}`;
-  const previous = discoveryJobs.get(jobKey);
-  if (previous && Date.now() - previous.startedAt < previous.retryAfter) {
-    await previous.promise;
+  // 관심 상위 분야를 돌아가며 찾는다. 최근에 찾은 주제는 건너뛰어 새로고침마다 다른 분야가 채워진다.
+  // 관심사가 없으면 찾은 행사가 점수를 얻지 못해 추천되지 않으므로, 탐색 추천을 보여주는 시연 모드에서만 기본 주제를 쓴다.
+  const candidates = [...discoveryTopics(interests),
+    ...(exploreEnabled() ? fallbackTopics.map((topic) => ({ topic, subject: topic })) : [])];
+  const jobs = candidates.map(({ topic, subject }) => discoveryJobs.get(`${topic}:${subject}`));
+  const running = jobs.find((job) => job && !job.done);
+  if (running) {
+    await running.promise;
     return false;
   }
+  const next = candidates.find((_, index) => !jobs[index] || Date.now() - jobs[index].startedAt >= jobs[index].retryAfter);
+  if (!next) return false;
+  const { topic, subject } = next;
+  const jobKey = `${topic}:${subject}`;
   const job = { startedAt: Date.now(), retryAfter: 15 * 60 * 1000, promise: null };
   const promise = (async () => {
-    const candidates = categoryGroup(topic) === '전시'
-      ? await discoverSemaExhibitions() : await discoverEvents(topic, { subject });
+    const candidates = await discoverCatalogEvents(topic, { subject });
     if (!candidates.length) return;
     const catalog = await data.rows('events', { source_type: 'eq.catalog' });
     const existing = new Set(catalog.filter((event) => Date.parse(event.end_at) > Date.now())
@@ -49,10 +49,10 @@ async function discoverFor(data, userId) {
     await importCloudCatalog(candidates.filter((event) => !existing.has(event.sourceUrl)));
     job.retryAfter = 12 * 60 * 60 * 1000;
   })();
-  job.promise = promise;
+  job.promise = promise.finally(() => { job.done = true; });
   discoveryJobs.set(jobKey, job);
-  promise.catch(() => { if (discoveryJobs.get(jobKey) === job) discoveryJobs.delete(jobKey); });
-  await promise;
+  job.promise.catch(() => { if (discoveryJobs.get(jobKey) === job) discoveryJobs.delete(jobKey); });
+  await job.promise;
   return true;
 }
 

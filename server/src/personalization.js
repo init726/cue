@@ -18,7 +18,7 @@ const relatedDomains = {
   로봇: ['AI', '소프트웨어', '과학'],
   과학: ['AI', '로봇', '소프트웨어', '교육'],
   미술: ['디자인'], 디자인: ['미술'],
-  음악: [], 창업: ['소프트웨어', 'AI', '정책'],
+  음악: ['공연'], 공연: ['음악'], 창업: ['소프트웨어', 'AI', '정책'],
 };
 
 export function interestSignals(interactions, currentTime = Date.now()) {
