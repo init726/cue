@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'cue_api.dart';
 import 'cue_categories.dart';
+import 'cue_route.dart';
 import 'cue_splash.dart';
 import 'saved_event_editor.dart';
 
@@ -164,6 +165,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   String? userId;
   bool cloudConnected = false;
   String? busyEventId;
+  // 실험: 내 일정을 하루 노선으로 보여준다. 목록 보기와 비교할 수 있게 전환을 남겨 둔다.
+  bool routeView = true;
   String? statusMessage;
   String? apiError;
   List<Map<String, dynamic>> saved = [];
@@ -1814,14 +1817,38 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   Widget _saved() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _pageTitle('내 일정', '확인하고 저장한 행사'),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: _pageTitle('내 일정', routeView ? '하루 동선으로 보는 일정' : '확인하고 저장한 행사'),
+          ),
+          SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment(value: true, icon: Icon(Icons.route_outlined), tooltip: '노선'),
+              ButtonSegment(value: false, icon: Icon(Icons.view_agenda_outlined), tooltip: '목록'),
+            ],
+            selected: {routeView},
+            onSelectionChanged: (value) => setState(() => routeView = value.first),
+          ),
+        ],
+      ),
       SizedBox(height: 22),
       if (saved.isEmpty)
-        _empty(Icons.event_note_outlined, '아직 저장한 행사가 없어요', '포스터나 공지문을 선택해 보세요.'),
-      for (final event in saved.reversed) ...[
-        _eventTile(event),
-        SizedBox(height: 11),
-      ],
+        _empty(Icons.event_note_outlined, '아직 저장한 행사가 없어요', '포스터나 공지문을 선택해 보세요.')
+      else if (routeView)
+        RouteView(
+          events: saved,
+          busyEventId: busyEventId,
+          onEdit: _editSaved,
+          onCancel: _cancelSaved,
+        )
+      else
+        for (final event in saved.reversed) ...[
+          _eventTile(event),
+          SizedBox(height: 11),
+        ],
     ],
   );
 
