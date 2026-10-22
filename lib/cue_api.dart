@@ -82,7 +82,7 @@ class CueApi {
       final auth = Supabase.instance.client.auth;
       if (auth.currentSession == null) await auth.signInAnonymously();
       _token = auth.currentSession?.accessToken;
-      if (_token == null) throw const CueApiException('익명 사용자 연결에 실패했습니다.');
+      if (_token == null) throw const CueApiException('익명 계정을 만들지 못했어요.');
       // 첫 초기화 뒤에는 최신 토큰만 반영하고 계정 이전·연결 확인은 반복하지 않는다.
       if (_ready) return;
       final legacyToken = prefs.getString('cue_session_token');
@@ -140,21 +140,21 @@ class CueApi {
               .timeout(const Duration(seconds: 100));
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
       if (decoded is! Map<String, dynamic>) {
-        throw const CueApiException('서버 응답 형식이 올바르지 않습니다.');
+        throw const CueApiException('서버 응답 형식이 올바르지 않아요.');
       }
       if (response.statusCode >= 400) {
         throw CueApiException(
-          decoded['error'] as String? ?? '요청에 실패했습니다.',
+          decoded['error'] as String? ?? '요청을 처리하지 못했어요.',
           status: response.statusCode,
         );
       }
       return decoded;
     } on TimeoutException {
-      throw const CueApiException('서버 응답 시간이 초과됐습니다. 다시 시도해 주세요.');
+      throw const CueApiException('서버 응답이 늦어요. 잠시 후 다시 시도해 주세요.');
     } on SocketException {
-      throw const CueApiException('서버에 연결할 수 없습니다. 네트워크와 서버 주소를 확인해 주세요.');
+      throw const CueApiException('서버에 연결할 수 없어요. 인터넷 연결을 확인하고 잠시 후 다시 시도해 주세요.');
     } on FormatException {
-      throw const CueApiException('서버 응답을 읽을 수 없습니다.');
+      throw const CueApiException('서버 응답을 읽을 수 없어요.');
     }
   }
 

@@ -136,6 +136,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   final deadlineController = TextEditingController();
   final feeController = TextEditingController();
   bool showUnknownInputs = false;
+  // 추천 탭에서 '일정에 추가'로 들어온 확인 화면이면 돌아갈 곳을 추천 탭으로 한다.
+  bool fromRecommendation = false;
   int tab = 0;
   ScanStage stage = ScanStage.idle;
   File? image;
@@ -156,7 +158,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   String selectedCategory = '기타';
   bool loading = true;
   bool onboardingCompleted = false;
-  bool onboardingSaving = false;
   bool onboardingPreferencesDirty = false;
   bool saving = false;
   bool personalizationEnabled = true;
@@ -167,8 +168,15 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   String? busyEventId;
   // 실험: 내 일정을 하루 노선으로 보여준다. 목록 보기와 비교할 수 있게 전환을 남겨 둔다.
   bool routeView = true;
+  DateTime? routeFocusDate;
+  bool showDeveloperInfo = false;
+  int routeFocusRequest = 0;
   String? statusMessage;
   String? apiError;
+  // 화면에는 apiError(쉬운 문장)를, '자세히'에서는 원문을 보여준다.
+  String? apiErrorDetail;
+  // 분석을 취소하면 번호가 바뀌어 늦게 도착한 결과를 버린다.
+  int analysisRun = 0;
   List<Map<String, dynamic>> saved = [];
   List<Map<String, dynamic>> recommended = [];
   Timer? progressTimer;
@@ -207,7 +215,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         }
       });
       await _analyze();
-    } catch (error) { _message('공유 파일을 열지 못했습니다: $error'); }
+    } catch (error) { _error(error, fallback: '공유한 파일을 열지 못했어요.'); }
     finally { takingSharedFile = false; }
   }
 
@@ -262,6 +270,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     }
     try {
       await api.init();
+      await _syncOnboarding();
       final prefs = await SharedPreferences.getInstance();
       final pending = prefs.getStringList('pending_event_deletions') ?? [];
       for (final id in pending) {
@@ -304,6 +313,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             .cast<Map<String, dynamic>>();
         recommendationLoading = false;
         apiError = null;
+        apiErrorDetail = null;
       });
       if (onboardingCompleted) {
         await prefs.setBool('cue_onboarding_completed', true);
@@ -312,7 +322,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (mounted) {
         setState(() {
           recommendationLoading = false;
-          apiError = error.toString();
+          apiError = _friendly(error);
+          apiErrorDetail = error.toString();
         });
       }
     }
@@ -334,7 +345,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       });
       await _analyze();
     } catch (error) {
-      _message('사진을 열지 못했습니다: $error');
+      _error(error, fallback: '사진을 열지 못했어요.');
     }
   }
 
@@ -346,7 +357,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       );
       if (files.isEmpty || !mounted) return;
       final picked = files.single;
-      if (picked.path == null) throw CueApiException('문서 경로를 읽지 못했습니다. 다시 선택해 주세요.');
+      if (picked.path == null) throw CueApiException('문서 경로를 읽지 못했어요. 다시 선택해 주세요.');
       final length = picked.lengthSync() ?? await picked.length();
       if (length == null || length == 0 || length > 10 * 1024 * 1024) {
         throw CueApiException('10MB 이하의 PDF 또는 한글 파일을 선택해 주세요.');
@@ -360,12 +371,13 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       });
       await _analyze();
     } catch (error) {
-      _message('문서를 열지 못했습니다: $error');
+      _error(error, fallback: '문서를 열지 못했어요.');
     }
   }
 
   Future<void> _analyze() async {
     if (image == null && document == null) return;
+    final run = ++analysisRun;
     if (apiError != null) {
       await _refresh();
       if (apiError != null) {
@@ -373,6 +385,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         return;
       }
     }
+    if (run != analysisRun) return;
     setState(() {
       stage = ScanStage.processing;
       statusMessage = '행사 안내물인지 확인하는 중';
@@ -394,7 +407,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       } else {
         final bytes = await image!.readAsBytes();
         if (bytes.length > 5 * 1024 * 1024) {
-          throw CueApiException('사진이 너무 큽니다. 5MB 이하 이미지를 선택해 주세요.');
+          throw CueApiException('사진이 너무 커요. 5MB 이하 이미지를 선택해 주세요.');
         }
         final ext = image!.path.toLowerCase();
         final mime = ext.endsWith('.png')
@@ -409,7 +422,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         'timezoneOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
         'defaultDurationMinutes': defaultDurationMinutes,
       });
-      if (!mounted) return;
+      if (!mounted || run != analysisRun) return;
       if (result['status'] == 'past_event') {
         setState(() {
           stage = ScanStage.pastEvent;
@@ -446,12 +459,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         WidgetsBinding.instance.addPostFrameCallback((_) => _requireSchedule());
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted && run == analysisRun) {
         setState(() => stage = ScanStage.idle);
-        _message(error.toString());
+        _error(error);
       }
     } finally {
-      progressTimer?.cancel();
+      if (run == analysisRun) progressTimer?.cancel();
     }
   }
 
@@ -468,8 +481,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     venueController.text = value.venue;
   }
 
+  static const _weekdayNames = ['월', '화', '수', '목', '금', '토', '일'];
   String _dateOnly(DateTime value) =>
-      '${value.year}.${value.month.toString().padLeft(2, '0')}.${value.day.toString().padLeft(2, '0')}';
+      '${value.year}.${value.month.toString().padLeft(2, '0')}.${value.day.toString().padLeft(2, '0')} (${_weekdayNames[value.weekday - 1]})';
   String _timeOnly(DateTime value) =>
       '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
@@ -631,7 +645,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   Future<void> _chooseCalendar() async {
     try {
       final permission = await calendarPlugin.requestPermissions();
-      if (permission.data != true) throw CueApiException('캘린더 권한이 필요합니다.');
+      if (permission.data != true) throw CueApiException('캘린더 권한이 필요해요.');
       final result = await calendarPlugin.retrieveCalendars();
       final calendars =
           result.data
@@ -676,7 +690,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       }
       await prefs.setString('preferred_calendar_name', preferredCalendarName);
     } catch (error) {
-      _message(error.toString());
+      _error(error);
     }
   }
 
@@ -707,7 +721,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     try {
       final permission = await calendarPlugin.requestPermissions();
       if (permission.data != true) {
-        throw CueApiException('캘린더 권한이 필요합니다. 기기 설정에서 허용해 주세요.');
+        throw CueApiException('캘린더 권한이 필요해요. 기기 설정에서 허용해 주세요.');
       }
       final list = await calendarPlugin.retrieveCalendars();
       final calendars =
@@ -715,7 +729,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
               ?.where((item) => item.isReadOnly != true && item.id != null)
               .toList() ??
           [];
-      if (calendars.isEmpty) throw CueApiException('저장할 수 있는 캘린더가 없습니다.');
+      if (calendars.isEmpty) throw CueApiException('저장할 수 있는 캘린더가 없어요.');
       final target =
           calendars
               .where((item) => item.id == preferredCalendarId)
@@ -735,7 +749,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       );
       final result = await calendarPlugin.createOrUpdateEvent(event);
       if (result?.isSuccess != true || result?.data == null) {
-        throw CueApiException('캘린더 저장에 실패했습니다.');
+        throw CueApiException('캘린더에 저장하지 못했어요.');
       }
       if (!mounted) return;
       setState(() => stage = ScanStage.saved);
@@ -759,10 +773,10 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         });
         await _refresh();
       } catch (_) {
-        _message('캘린더에는 저장됐지만 추천 기록 동기화에 실패했습니다.');
+        _message('캘린더에는 저장됐지만 Cue 기록에는 아직 반영되지 않았어요.');
       }
     } catch (error) {
-      _message(error.toString());
+      _error(error);
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -773,7 +787,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   ) async {
     final permission = await calendarPlugin.requestPermissions();
     if (permission.data != true) {
-      throw CueApiException('캘린더 권한이 필요합니다. 기기 설정에서 허용해 주세요.');
+      throw CueApiException('캘린더 권한이 필요해요. 기기 설정에서 허용해 주세요.');
     }
     final calendarId = savedEvent['calendarId'] as String?;
     final eventId = savedEvent['calendarEventId'] as String?;
@@ -785,13 +799,13 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       final matches =
           result.data?.where((item) => item.eventId == eventId).toList() ?? [];
       if (result.isSuccess != true || matches.length != 1) {
-        throw CueApiException('연결된 캘린더 일정을 찾지 못했습니다. 캘린더에서 직접 확인해 주세요.');
+        throw CueApiException('연결된 캘린더 일정을 찾지 못했어요. 캘린더에서 직접 확인해 주세요.');
       }
       return matches.single;
     }
     // Records saved before calendar IDs were stored can be linked only by a unique exact match.
     final calendars = await calendarPlugin.retrieveCalendars();
-    if (calendars.isSuccess != true) throw CueApiException('캘린더 목록을 읽지 못했습니다.');
+    if (calendars.isSuccess != true) throw CueApiException('캘린더 목록을 읽지 못했어요.');
     final start = DateTime.parse(savedEvent['startsAt'] as String);
     final end = DateTime.parse(savedEvent['endsAt'] as String);
     final matches = <calendar.Event>[];
@@ -822,8 +836,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     if (matches.length != 1) {
       throw CueApiException(
         matches.isEmpty
-            ? '기존 기록과 일치하는 캘린더 일정을 찾지 못했습니다.'
-            : '같은 일정이 여러 개여서 안전하게 선택할 수 없습니다. 캘린더에서 직접 수정해 주세요.',
+            ? '기존 기록과 일치하는 캘린더 일정을 찾지 못했어요.'
+            : '같은 일정이 여러 개라 안전하게 고를 수 없어요. 캘린더에서 직접 수정해 주세요.',
       );
     }
     return matches.single;
@@ -870,7 +884,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           : [calendar.Reminder(minutes: draft.reminderMinutes)];
       final result = await calendarPlugin.createOrUpdateEvent(deviceEvent);
       if (result?.isSuccess != true) {
-        throw CueApiException('캘린더 일정 수정에 실패했습니다.');
+        throw CueApiException('캘린더 일정을 수정하지 못했어요.');
       }
       try {
         await api.patch('/v1/events/$id', {
@@ -895,17 +909,55 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         final restored = await calendarPlugin.createOrUpdateEvent(previous);
         throw CueApiException(
           restored?.isSuccess == true
-              ? '서버 동기화에 실패해 캘린더 변경을 되돌렸습니다. 다시 시도해 주세요.'
-              : '서버 동기화와 변경 취소에 실패했습니다. 캘린더 일정을 직접 확인해 주세요.',
+              ? '서버에 반영하지 못해 캘린더 변경을 되돌렸어요. 다시 시도해 주세요.'
+              : '서버 반영과 변경 되돌리기에 모두 실패했어요. 캘린더 일정을 직접 확인해 주세요.',
         );
       }
       await _refresh();
       _message('캘린더 일정과 알림을 수정했어요.');
     } catch (error) {
-      _message(error.toString());
+      _error(error);
     } finally {
       if (mounted) setState(() => busyEventId = null);
     }
+  }
+
+  // 목록 보기는 다가오는 일정을 가까운 순서로, 지난 일정은 그 뒤에 최근 순서로 둔다.
+  List<Map<String, dynamic>> _byDate(List<Map<String, dynamic>> events) {
+    final now = DateTime.now();
+    DateTime start(Map<String, dynamic> event) =>
+        DateTime.tryParse(event['startsAt'] as String? ?? '') ?? DateTime(1970);
+    DateTime end(Map<String, dynamic> event) =>
+        DateTime.tryParse(event['endsAt'] as String? ?? '') ?? DateTime(1970);
+    final upcoming = events.where((event) => end(event).isAfter(now)).toList()
+      ..sort((a, b) => start(a).compareTo(start(b)));
+    final past = events.where((event) => !end(event).isAfter(now)).toList()
+      ..sort((a, b) => start(b).compareTo(start(a)));
+    return [...upcoming, ...past];
+  }
+
+  // 겹치는 일정 중 하나를 고르면 나머지를 한 번에 확인받고 취소한다.
+  Future<void> _keepOnly(Map<String, dynamic> keep, List<Map<String, dynamic>> drop) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('${keep['title']}만 남길까요?'),
+        content: Text([
+          '아래 일정은 기기 캘린더의 일정·알림과 함께 취소돼요.',
+          for (final event in drop) '• ${event['title']}',
+        ].join('\n')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text('돌아가기')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text('나머지 취소')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    for (final event in drop) {
+      if (!await _deleteSaved(event, quiet: true)) return;
+    }
+    await _refresh();
+    _message('${keep['title']}만 남겼어요.');
   }
 
   Future<void> _cancelSaved(Map<String, dynamic> savedEvent) async {
@@ -913,7 +965,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text('일정을 취소할까요?'),
-        content: Text('기기 캘린더의 일정과 알림이 삭제되고 Cue의 추천 기록에서도 빠집니다.'),
+        content: Text('기기 캘린더의 일정과 알림이 삭제되고 Cue의 추천 기록에서도 빠져요.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -927,6 +979,11 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       ),
     );
     if (confirmed != true || !mounted) return;
+    await _deleteSaved(savedEvent);
+  }
+
+  // 기기 캘린더와 Cue 기록에서 일정을 지운다. quiet면 성공 안내와 새로고침을 호출한 쪽에 맡긴다.
+  Future<bool> _deleteSaved(Map<String, dynamic> savedEvent, {bool quiet = false}) async {
     final id = savedEvent['id'] as String;
     setState(() => busyEventId = id);
     try {
@@ -936,7 +993,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         deviceEvent.eventId,
       );
       if (result.isSuccess != true || result.data != true) {
-        throw CueApiException('캘린더에서 일정을 삭제하지 못했습니다.');
+        throw CueApiException('캘린더에서 일정을 삭제하지 못했어요.');
       }
       var synced = true;
       try {
@@ -951,12 +1008,16 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             id,
           ]);
         }
-        _message('캘린더 일정과 알림을 삭제했어요. Cue 기록은 연결되면 다시 정리합니다.');
+        _message('캘린더 일정과 알림을 삭제했어요. Cue 기록은 연결되면 정리할게요.');
       }
-      await _refresh();
-      if (synced) _message('일정을 취소했어요.');
+      if (!quiet) {
+        await _refresh();
+        if (synced) _message('일정을 취소했어요.');
+      }
+      return true;
     } catch (error) {
-      _message(error.toString());
+      _error(error);
+      return false;
     } finally {
       if (mounted) setState(() => busyEventId = null);
     }
@@ -968,11 +1029,56 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     }
   }
 
+  // 오류 원문 대신 사용자가 이해할 문장을 보여준다. CueApiException은 이미 사용자용 문장이다.
+  String _friendly(Object error, {String? fallback}) {
+    if (error is CueApiException) return error.message;
+    final text = error.toString();
+    if (error is SocketException || error is TimeoutException ||
+        RegExp('SocketException|ClientException|Failed host lookup|AuthRetryableFetchException').hasMatch(text)) {
+      return '서버에 연결할 수 없어요. 인터넷 연결을 확인하고 잠시 후 다시 시도해 주세요.';
+    }
+    return fallback ?? '문제가 생겼어요. 잠시 후 다시 시도해 주세요.';
+  }
+
+  void _error(Object error, {String? fallback}) {
+    if (!mounted) return;
+    final text = _friendly(error, fallback: fallback);
+    final detail = error.toString();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(text),
+      action: detail == text
+          ? null
+          : SnackBarAction(label: '자세히', onPressed: () => _showDetail(detail)),
+    ));
+  }
+
+  void _showDetail(String detail) => showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text('오류 내용'),
+      content: SingleChildScrollView(child: SelectableText(detail, style: TextStyle(fontSize: 13))),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Clipboard.setData(ClipboardData(text: detail));
+            Navigator.pop(dialogContext);
+            _message('오류 내용을 복사했어요.');
+          },
+          child: Text('복사'),
+        ),
+        FilledButton(onPressed: () => Navigator.pop(dialogContext), child: Text('닫기')),
+      ],
+    ),
+  );
+
   void _reset() {
+    analysisRun += 1;
+    progressTimer?.cancel();
     setState(() {
       deadlineController.clear();
       feeController.clear();
       showUnknownInputs = false;
+      fromRecommendation = false;
       image = null;
       document = null;
       candidate = null;
@@ -996,7 +1102,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             if (apiError != null)
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20),
-                child: _notice(apiError!, onTap: _refresh),
+                child: _notice(apiError!, onTap: _refresh, detail: apiErrorDetail),
               ),
             Expanded(child: _scroll(_onboarding())),
           ]),
@@ -1011,7 +1117,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             if (apiError != null)
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20),
-                child: _notice(apiError!, onTap: _refresh),
+                child: _notice(apiError!, onTap: _refresh, detail: apiErrorDetail),
               ),
             Expanded(
               child: IndexedStack(
@@ -1094,31 +1200,29 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     ),
   );
 
+  // 시작은 서버 연결 없이 바로 한다. 온보딩에서 고른 추천 설정은 서버에 연결될 때 반영한다.
   Future<void> _finishOnboarding() async {
-    if (onboardingSaving) return;
-    setState(() => onboardingSaving = true);
-    try {
-      await api.init();
-      await api.patch('/v1/profile', {
-        'onboardingCompleted': true,
-        'personalizationEnabled': personalizationEnabled,
-        'recommendationEnabled': recommendationEnabled,
-      });
-      await (await SharedPreferences.getInstance()).setBool(
-        'cue_onboarding_completed', true,
-      );
-      if (!mounted) return;
-      setState(() {
-        onboardingCompleted = true;
-        onboardingSaving = false;
-        onboardingPreferencesDirty = false;
-      });
-      unawaited(_refresh());
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => onboardingSaving = false);
-      _message('설정을 저장하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.');
-    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('cue_onboarding_completed', true);
+    await prefs.setBool('cue_onboarding_recommendations', personalizationEnabled && recommendationEnabled);
+    await prefs.setBool('cue_onboarding_synced', false);
+    if (!mounted) return;
+    setState(() => onboardingCompleted = true);
+    unawaited(_refresh());
+  }
+
+  Future<void> _syncOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    // 키가 없으면 예전 버전에서 이미 서버에 저장한 사용자다.
+    if (prefs.getBool('cue_onboarding_synced') != false) return;
+    final enabled = prefs.getBool('cue_onboarding_recommendations') ?? true;
+    await api.patch('/v1/profile', {
+      'onboardingCompleted': true,
+      'personalizationEnabled': enabled,
+      'recommendationEnabled': enabled,
+    });
+    await prefs.setBool('cue_onboarding_synced', true);
+    onboardingPreferencesDirty = false;
   }
 
   Widget _onboardingStep(String number, String title, String detail) =>
@@ -1148,93 +1252,37 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       SizedBox(height: 10),
       Text('Cue 시작하기', style: TextStyle(color: ink, fontSize: 30, fontWeight: FontWeight.w800)),
       SizedBox(height: 8),
-      Text('행사 일정을 저장하는 방법과 기본 설정을 확인해 주세요.',
+      Text('포스터 한 장이면 캘린더 일정이 돼요.',
         style: TextStyle(color: muted, height: 1.5)),
       SizedBox(height: 24),
       _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _eyebrow('사용 방법'),
         SizedBox(height: 10),
-        _onboardingStep('1', '포스터나 공지문을 선택해요', '촬영하거나 사진첩에서 고를 수 있어요. + 버튼으로 문서도 열 수 있어요.'),
-        _onboardingStep('2', '일정 정보를 자동으로 읽어요', '시간과 장소를 확인하고 필요한 내용은 고쳐주세요.'),
+        _onboardingStep('1', '포스터나 공지문을 골라요', '촬영하거나 사진첩, PDF·한글 파일에서 고를 수 있어요.'),
+        _onboardingStep('2', '일정 정보를 자동으로 읽어요', '시간과 장소를 확인하고 필요한 내용은 고쳐 주세요.'),
         _onboardingStep('3', '캘린더에 저장해요', '저장 버튼을 누른 일정만 캘린더에 추가돼요.'),
       ])),
       SizedBox(height: 14),
-      _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _eyebrow('기본 설정'),
-        SizedBox(height: 16),
-        Text('화면 테마', style: TextStyle(color: ink, fontWeight: FontWeight.w700)),
-        SizedBox(height: 10),
-        SegmentedButton<ThemeMode>(
-          segments: [
-            ButtonSegment(value: ThemeMode.system, label: Text('시스템')),
-            ButtonSegment(value: ThemeMode.light, label: Text('라이트')),
-            ButtonSegment(value: ThemeMode.dark, label: Text('다크')),
-          ],
-          selected: {cueThemeMode.value},
-          onSelectionChanged: (value) async {
-            cueThemeMode.value = value.first;
-            await (await SharedPreferences.getInstance()).setString('theme_mode', value.first.name);
-          },
-        ),
-        SizedBox(height: 16),
-        Text('기본 알림', style: TextStyle(color: ink, fontWeight: FontWeight.w700)),
-        SizedBox(height: 8),
-        Wrap(spacing: 7, runSpacing: 4, children: [
-          for (final option in [15, 60, 1440, -1])
-            ChoiceChip(
-              label: Text(_reminderLabel(option)),
-              selected: defaultReminderMinutes == option,
-              onSelected: (_) async {
-                setState(() { defaultReminderMinutes = option; reminderMinutes = option; });
-                await (await SharedPreferences.getInstance()).setInt('default_reminder_minutes', option);
-              },
-            ),
-        ]),
-        SizedBox(height: 16),
-        Text('종료 시간이 없는 일정', style: TextStyle(color: ink, fontWeight: FontWeight.w700)),
-        SizedBox(height: 8),
-        SegmentedButton<int>(
-          segments: [
-            ButtonSegment(value: 60, label: Text('1시간')),
-            ButtonSegment(value: 120, label: Text('2시간')),
-            ButtonSegment(value: 180, label: Text('3시간')),
-          ],
-          selected: {defaultDurationMinutes},
-          onSelectionChanged: (value) async {
-            setState(() => defaultDurationMinutes = value.first);
-            await (await SharedPreferences.getInstance()).setInt('default_duration_minutes', value.first);
-          },
-        ),
-        Divider(color: borderColor, height: 34),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text('관심사 기반 행사 추천'),
-          subtitle: Text('저장한 일정과 선택 기록을 추천에 사용해요.'),
-          value: personalizationEnabled && recommendationEnabled,
-          onChanged: (value) => setState(() {
-            onboardingPreferencesDirty = true;
-            personalizationEnabled = value;
-            recommendationEnabled = value;
-          }),
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(Icons.calendar_month_outlined, color: accent),
-          title: Text('저장할 캘린더'),
-          subtitle: Text(preferredCalendarName),
-          trailing: Icon(Icons.chevron_right, color: muted),
-          onTap: _chooseCalendar,
-        ),
-      ])),
+      _card(SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: Text('관심사 기반 행사 추천'),
+        subtitle: Text('저장한 일정과 선택 기록으로 맞는 행사를 찾아드려요.'),
+        value: personalizationEnabled && recommendationEnabled,
+        onChanged: (value) => setState(() {
+          onboardingPreferencesDirty = true;
+          personalizationEnabled = value;
+          recommendationEnabled = value;
+        }),
+      )),
       SizedBox(height: 14),
-      Text('사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송됩니다.',
-        style: TextStyle(color: muted, fontSize: 13, height: 1.5)),
-      SizedBox(height: 20),
-      _button(
-        onboardingSaving ? '설정 저장 중...' : '시작하기',
-        Icons.arrow_forward,
-        onboardingSaving ? null : _finishOnboarding,
+      Text(
+        '로그인 없이 바로 시작해요. 사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송돼요. '
+        '앱을 지우면 Cue 기록은 되찾을 수 없지만 캘린더에 저장한 일정은 남아요. '
+        '테마, 알림, 저장할 캘린더는 설정에서 바꿀 수 있어요.',
+        style: TextStyle(color: muted, fontSize: 13, height: 1.5),
       ),
+      SizedBox(height: 20),
+      _button('시작하기', Icons.arrow_forward, _finishOnboarding),
     ],
   );
 
@@ -1254,7 +1302,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       ),
       SizedBox(height: 13),
       Text(
-        '포스터나 공지문을 촬영하거나 사진으로 골라주세요.\n확인한 일정만 캘린더에 저장됩니다.',
+        '확인한 일정만 캘린더에 저장돼요.',
         style: TextStyle(fontSize: 15, height: 1.55, color: muted),
       ),
       SizedBox(height: 28),
@@ -1312,33 +1360,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           _button('이 문서 다시 분석', Icons.refresh, _analyze, light: true),
           SizedBox(height: 18),
         ],
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(Icons.center_focus_strong, color: Colors.white, size: 29),
-            ),
-            IconButton.filled(
-              onPressed: _showMoreSources,
-              tooltip: '문서 열기',
-              icon: Icon(Icons.add),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.white.withValues(alpha: 0.16),
-                foregroundColor: Colors.white,
-                fixedSize: Size(46, 46),
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: 27),
         Text(
-          '포스터나 공지문을 선택하세요',
+          '포스터나 공지문을 골라 주세요',
           style: TextStyle(
             fontSize: 21,
             fontWeight: FontWeight.w800,
@@ -1347,7 +1370,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         ),
         SizedBox(height: 7),
         Text(
-          '사진을 찍거나 사진첩에서 골라 주세요.',
+          '사진뿐 아니라 PDF·한글(HWP) 공지문도 읽을 수 있어요.',
           style: TextStyle(color: Color(0xFFD9F0FF)),
         ),
         SizedBox(height: 23),
@@ -1358,32 +1381,30 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           light: true,
         ),
         SizedBox(height: 10),
-        _button(
-          '사진첩에서 선택',
-          Icons.photo_library_outlined,
-          () => _pick(ImageSource.gallery),
-          outlined: true,
+        Row(
+          children: [
+            Expanded(
+              child: _button(
+                '사진첩',
+                Icons.photo_library_outlined,
+                () => _pick(ImageSource.gallery),
+                outlined: true,
+              ),
+            ),
+            SizedBox(width: 10),
+            Expanded(
+              child: _button(
+                'PDF·한글',
+                Icons.upload_file_outlined,
+                _pickDocument,
+                outlined: true,
+              ),
+            ),
+          ],
         ),
       ],
     ),
   );
-
-  Future<void> _showMoreSources() async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(
-            leading: Icon(Icons.upload_file_outlined, color: accent),
-            title: Text('PDF·한글 파일 열기'),
-            subtitle: Text('공지문 문서에서 행사 정보를 읽어요.'),
-            onTap: () => Navigator.pop(context, 'document'),
-          ),
-        ]),
-      ),
-    );
-    if (choice == 'document') await _pickDocument();
-  }
 
   Widget _progressCard() => _card(
     Column(
@@ -1433,6 +1454,16 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
               ),
             ),
           ],
+        ),
+        SizedBox(height: 8),
+        Text('서버가 쉬고 있었다면 처음에는 30초 넘게 걸릴 수 있어요.',
+            style: TextStyle(color: muted, fontSize: 13)),
+        SizedBox(height: 6),
+        TextButton.icon(
+          onPressed: _reset,
+          icon: Icon(Icons.close),
+          label: Text('분석 취소'),
+          style: TextButton.styleFrom(padding: EdgeInsets.zero),
         ),
       ],
     ),
@@ -1510,7 +1541,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '읽어낸 일정입니다. 저장 전에 확인해 주세요.',
+                  fromRecommendation
+                      ? '추천 행사를 일정에 추가해요. 확인하고 저장해 주세요.'
+                      : '읽어낸 일정이에요. 저장 전에 확인해 주세요.',
                   style: TextStyle(color: accent, fontWeight: FontWeight.w700),
                 ),
               ),
@@ -1551,10 +1584,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
               ),
               if (event.description.isNotEmpty) ...[
                 SizedBox(height: 12),
-                Text(event.description, style: TextStyle(color: muted)),
+                Text(event.description, maxLines: 3, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: muted)),
               ],
-              SizedBox(height: 10),
-              Text('형식: ${event.format} · 분야: ${event.domains.join('·')}', style: TextStyle(color: muted)),
             ],
           ),
         ),
@@ -1605,25 +1637,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ),
         ),
         SizedBox(height: 14),
-        if (event.applicationDeadline == null || event.participationFee == null) ...[
-          _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _eyebrow('확인하지 못한 정보'),
-            if (event.applicationDeadline == null) Text('• 신청 마감일'),
-            if (event.participationFee == null) Text('• 참가비'),
-            SizedBox(height: 10),
-            Text('안내문에 없거나 확실하지 않아 비워 두었어요.', style: TextStyle(color: muted)),
-            Wrap(spacing: 8, children: [
-              TextButton(onPressed: () => setState(() => showUnknownInputs = true), child: Text('직접 입력')),
-              TextButton(onPressed: () => setState(() { showUnknownInputs = false; deadlineController.clear(); feeController.clear(); }), child: Text('이 정보 없이 계속')),
-            ]),
-            if (showUnknownInputs) ...[
-              TextField(controller: deadlineController, decoration: InputDecoration(labelText: '신청 마감일 (YYYY-MM-DD)'), keyboardType: TextInputType.datetime),
-              SizedBox(height: 8),
-              TextField(controller: feeController, decoration: InputDecoration(labelText: '참가비 (예: 무료, 10,000원)')),
-            ],
-          ])),
-          SizedBox(height: 14),
-        ],
         _card(
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1643,6 +1656,42 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                     ),
                 ],
               ),
+              Divider(color: borderColor, height: 28),
+              // 신청 마감일·참가비는 안내문에 없는 경우가 많아 기본으로 접어 둔다.
+              InkWell(
+                onTap: () => setState(() => showUnknownInputs = !showUnknownInputs),
+                child: Row(
+                  children: [
+                    Icon(Icons.post_add_outlined, size: 20, color: muted),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        [
+                          if (deadlineController.text.trim().isNotEmpty) '마감 ${deadlineController.text.trim()}',
+                          if (feeController.text.trim().isNotEmpty) feeController.text.trim(),
+                        ].join(' · ').ifEmpty('신청 마감일·참가비 추가 (선택)'),
+                        style: TextStyle(color: muted, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    Icon(showUnknownInputs ? Icons.expand_less : Icons.expand_more, color: muted),
+                  ],
+                ),
+              ),
+              if (showUnknownInputs) ...[
+                SizedBox(height: 12),
+                TextField(
+                  controller: deadlineController,
+                  decoration: InputDecoration(labelText: '신청 마감일 (YYYY-MM-DD)'),
+                  keyboardType: TextInputType.datetime,
+                  onChanged: (_) => setState(() {}),
+                ),
+                SizedBox(height: 8),
+                TextField(
+                  controller: feeController,
+                  decoration: InputDecoration(labelText: '참가비 (예: 무료, 10,000원)'),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
             ],
           ),
         ),
@@ -1654,7 +1703,15 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         ),
         SizedBox(height: 10),
         Center(
-          child: TextButton(onPressed: _reset, child: Text('다시 스캔하기')),
+          child: fromRecommendation
+              ? TextButton(
+                  onPressed: () {
+                    _reset();
+                    setState(() => tab = 2);
+                  },
+                  child: Text('추천으로 돌아가기'),
+                )
+              : TextButton(onPressed: _reset, child: Text('다시 스캔하기')),
         ),
       ],
     );
@@ -1792,27 +1849,108 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     ),
   );
 
-  Widget _savedCard() => _card(
-    Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(Icons.check_circle, color: accent, size: 46),
-        SizedBox(height: 15),
-        Text(
-          '저장 완료',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: ink,
+  // 방금 저장한 일정이 있는 날의 노선. 서버 목록에 아직 없으면 방금 저장한 일정을 더해 계산한다.
+  RouteDay? _savedDay() {
+    final start = startsAt;
+    final end = endsAt;
+    if (start == null || end == null) return null;
+    final title = titleController.text.trim();
+    final listed = saved.any((event) =>
+        event['title'] == title &&
+        (DateTime.tryParse(event['startsAt'] as String? ?? '')?.isAtSameMomentAs(start) ?? false));
+    final events = [
+      ...saved,
+      if (!listed)
+        {
+          'id': 'just-saved',
+          'title': title,
+          'venue': venueController.text.trim(),
+          'category': selectedCategory,
+          'startsAt': start.toUtc().toIso8601String(),
+          'endsAt': end.toUtc().toIso8601String(),
+        },
+    ];
+    final date = DateTime(start.year, start.month, start.day);
+    return buildRoute(events).where((day) => day.date == date).firstOrNull;
+  }
+
+  Widget _savedCard() {
+    final day = _savedDay();
+    final (note, warn) = day == null
+        ? ('', false)
+        : day.hasFork
+        ? ('시간이 겹치는 일정이 있어요. 동선에서 하나를 골라 주세요.', true)
+        : day.hasTight
+        ? ('앞뒤 일정과 간격이 짧아요. 이동 시간을 확인해 주세요.', true)
+        : day.stops.length > 1
+        ? ('이날 다른 일정과 겹치지 않아요.', false)
+        : ('이날 일정은 이것 하나예요.', false);
+    final backToRecommendations = fromRecommendation;
+    return _card(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.check_circle, color: accent, size: 46),
+          SizedBox(height: 15),
+          Text(
+            '저장 완료',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: ink,
+            ),
           ),
-        ),
-        SizedBox(height: 6),
-        Text('캘린더에 일정과 알림이 추가됐어요.', style: TextStyle(color: muted)),
-        SizedBox(height: 20),
-        _button('다른 행사 스캔하기', Icons.add_a_photo_outlined, _reset),
-      ],
-    ),
-  );
+          SizedBox(height: 6),
+          Text('캘린더에 일정과 알림이 추가됐어요.', style: TextStyle(color: muted)),
+          if (day != null) ...[
+            SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: warn ? (isDark ? Color(0xFF3A2A17) : Color(0xFFFFF1E2)) : mint,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${dayLabel(day.date)} · 일정 ${day.stops.length}곳',
+                      style: TextStyle(color: ink, fontWeight: FontWeight.w800)),
+                  SizedBox(height: 4),
+                  Text(note, style: TextStyle(
+                    color: warn ? (isDark ? Color(0xFFFFB86B) : Color(0xFFC96A12)) : muted,
+                    fontSize: 13,
+                  )),
+                ],
+              ),
+            ),
+          ],
+          SizedBox(height: 20),
+          if (day != null) ...[
+            _button('이날 동선 보기', Icons.route_outlined, () {
+              _reset();
+              setState(() {
+                tab = 1;
+                routeView = true;
+                routeFocusDate = day.date;
+                routeFocusRequest += 1;
+              });
+            }),
+            SizedBox(height: 8),
+          ],
+          Center(
+            child: TextButton(
+              onPressed: () {
+                _reset();
+                if (backToRecommendations) setState(() => tab = 2);
+              },
+              child: Text(backToRecommendations ? '추천 더 보기' : '다른 행사 스캔하기'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _saved() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1843,9 +1981,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           busyEventId: busyEventId,
           onEdit: _editSaved,
           onCancel: _cancelSaved,
+          onKeep: _keepOnly,
+          focusDate: routeFocusDate,
+          focusRequest: routeFocusRequest,
         )
       else
-        for (final event in saved.reversed) ...[
+        for (final event in _byDate(saved)) ...[
           _eventTile(event),
           SizedBox(height: 11),
         ],
@@ -1887,21 +2028,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     children: [
       _pageTitle('설정', '캘린더와 추천 설정'),
       SizedBox(height: 20),
-      if (userId != null) ...[
-        _card(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _eyebrow('내 계정'),
-              SizedBox(height: 10),
-              Text(cloudConnected ? '계정 연결됨' : '계정 연결 확인 필요'),
-              SizedBox(height: 4),
-              SelectableText('사용자 ID  $userId'),
-            ],
-          ),
-        ),
-        SizedBox(height: 14),
-      ],
       _card(
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2043,7 +2169,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             ),
             SizedBox(height: 8),
             Text(
-              '사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송됩니다. 행사 안내물이 아니면 추가 분석을 하지 않습니다.',
+              '사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송돼요. 행사 안내물이 아니면 더 분석하지 않아요.',
               style: TextStyle(color: muted, height: 1.5),
             ),
           ],
@@ -2080,6 +2206,48 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
               ),
             ),
+          ],
+        ),
+      ),
+      SizedBox(height: 14),
+      _card(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _eyebrow('내 기록'),
+            SizedBox(height: 8),
+            Text(
+              userId == null
+                  ? '아직 서버에 연결되지 않았어요. 연결되면 일정과 관심사가 기록돼요.'
+                  : '로그인 없이 쓰는 익명 계정에 일정과 관심사가 기록되고 있어요.',
+              style: TextStyle(color: ink, height: 1.5),
+            ),
+            SizedBox(height: 6),
+            Text(
+              '앱을 지우거나 기기를 바꾸면 Cue 기록은 되찾을 수 없어요. 기기 캘린더에 저장한 일정은 그대로 남아요.',
+              style: TextStyle(color: muted, fontSize: 13, height: 1.5),
+            ),
+            SizedBox(height: 6),
+            InkWell(
+              onTap: () => setState(() => showDeveloperInfo = !showDeveloperInfo),
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Row(children: [
+                  Text('개발자 정보', style: TextStyle(color: muted, fontSize: 13, fontWeight: FontWeight.w700)),
+                  Icon(showDeveloperInfo ? Icons.expand_less : Icons.expand_more, size: 18, color: muted),
+                ]),
+              ),
+            ),
+            if (showDeveloperInfo)
+              SelectableText(
+                [
+                  '서버  $cueApiUrl',
+                  '클라우드 저장소  ${cloudConnected ? '연결됨' : '연결 안 됨'}',
+                  if (userId != null) '사용자 ID  $userId',
+                  if (apiErrorDetail != null) '마지막 오류  $apiErrorDetail',
+                ].join('\n'),
+                style: TextStyle(color: muted, fontSize: 12, height: 1.5),
+              ),
           ],
         ),
       ),
@@ -2129,6 +2297,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     try {
       date = DateTime.parse(event['startsAt'] as String).toLocal();
     } catch (_) {}
+    final description = event['description'] as String? ?? '';
+    final sourceUrl = event['sourceUrl'] as String?;
+    final interested = interestedIds.contains(event['id']);
     return _card(
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2146,15 +2317,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           SizedBox(height: 10),
           if (date != null) _detail(Icons.schedule, _date(date)),
           _detail(Icons.place_outlined, event['venue'] as String? ?? ''),
-          if (recommended && (event['description'] as String? ?? '').isNotEmpty) ...[
-            SizedBox(height: 10),
-            Text(
-              event['description'] as String,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: ink, fontSize: 14, height: 1.45),
-            ),
-          ],
           if (recommended && event['reason'] is String) ...[
             SizedBox(height: 10),
             Row(
@@ -2171,89 +2333,94 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
               ],
             ),
           ],
-          if (recommended && event['sourceUrl'] is String) ...[
+          if (recommended && description.isNotEmpty) ...[
             SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: () async {
-                final url = Uri.tryParse(event['sourceUrl'] as String);
-                if (url == null || !await launchUrl(url, mode: LaunchMode.externalApplication)) {
-                  _message('공식 안내 페이지를 열 수 없습니다.');
-                }
-              },
-              icon: Icon(Icons.open_in_new, size: 18),
-              label: Text('공식 안내 확인'),
+            Text(
+              description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: muted, fontSize: 13, height: 1.45),
             ),
           ],
-          if (!recommended) ...[
-            SizedBox(height: 14),
-            if (busyEventId == event['id'])
-              Center(
-                child: Padding(
-                  padding: EdgeInsets.all(8),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      SizedBox(width: 9),
-                      Text('캘린더와 알림을 확인하는 중'),
-                    ],
-                  ),
+          SizedBox(height: 14),
+          if (!recommended && busyEventId == event['id'])
+            Center(
+              child: Padding(
+                padding: EdgeInsets.all(8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 9),
+                    Text('캘린더와 알림을 확인하는 중'),
+                  ],
                 ),
-              )
-            else
-              Row(
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () => _editSaved(event),
-                    icon: Icon(Icons.edit_outlined),
-                    label: Text('수정'),
-                  ),
-                  SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: () => _cancelSaved(event),
-                    icon: Icon(Icons.event_busy_outlined),
-                    label: Text('일정 취소'),
-                  ),
-                ],
               ),
-          ],
-          if (recommended) ...[
-            SizedBox(height: 14),
-            Wrap(
-              spacing: 6,
+            )
+          else if (!recommended)
+            Row(
               children: [
-                interestedIds.contains(event['id'])
-                    ? FilledButton.icon(
-                        onPressed: () => _message('이미 관심 표시한 행사예요.'),
-                        icon: Icon(Icons.favorite),
-                        label: Text('관심 있음'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Color(0xFFE5484D),
-                          foregroundColor: Colors.white,
-                        ),
-                      )
-                    : OutlinedButton.icon(
-                        onPressed: () => _feedback(event, 'interested'),
-                        icon: Icon(Icons.favorite_border),
-                        label: Text('관심 있음'),
-                      ),
+                OutlinedButton.icon(
+                  onPressed: () => _editSaved(event),
+                  icon: Icon(Icons.edit_outlined),
+                  label: Text('수정'),
+                ),
+                SizedBox(width: 8),
                 TextButton.icon(
-                  onPressed: () => _dismissRecommendation(event),
-                  icon: Icon(Icons.not_interested_outlined),
-                  label: Text('관심 없음'),
+                  onPressed: () => _cancelSaved(event),
+                  icon: Icon(Icons.event_busy_outlined),
+                  label: Text('일정 취소'),
                 ),
               ],
+            )
+          else
+            // 주 행동은 '일정에 추가' 하나만 크게 두고, 나머지는 아이콘으로 줄인다.
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => _planRecommendation(event),
+                    icon: Icon(Icons.event_available_outlined),
+                    label: Text('일정에 추가'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: isDark ? Color(0xFF0B1928) : Colors.white,
+                      minimumSize: Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      textStyle: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 6),
+                IconButton(
+                  tooltip: interested ? '관심 표시함' : '관심 있음',
+                  onPressed: interested
+                      ? () => _message('이미 관심 표시한 행사예요.')
+                      : () => _feedback(event, 'interested'),
+                  icon: Icon(interested ? Icons.favorite : Icons.favorite_border, color: accent),
+                ),
+                IconButton(
+                  tooltip: '관심 없음',
+                  onPressed: () => _dismissRecommendation(event),
+                  icon: Icon(Icons.not_interested_outlined, color: muted),
+                ),
+                if (sourceUrl != null)
+                  IconButton(
+                    tooltip: '공식 안내',
+                    onPressed: () async {
+                      final url = Uri.tryParse(sourceUrl);
+                      if (url == null || !await launchUrl(url, mode: LaunchMode.externalApplication)) {
+                        _message('공식 안내 페이지를 열 수 없어요.');
+                      }
+                    },
+                    icon: Icon(Icons.open_in_new, color: muted),
+                  ),
+              ],
             ),
-            _button(
-              '계획하기',
-              Icons.event_available_outlined,
-              () => _planRecommendation(event),
-            ),
-          ],
         ],
       ),
     );
@@ -2264,7 +2431,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       await api.patch('/v1/profile', changes);
       await _refresh();
     } catch (error) {
-      _message(error.toString());
+      _error(error);
     }
   }
 
@@ -2322,7 +2489,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       await api.post('/v1/goals', {'eventId': event['id']});
       _openRecommendation(event);
     } catch (error) {
-      _message(error.toString());
+      _error(error);
     }
   }
 
@@ -2356,6 +2523,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       selectedSession = 0;
       _applySession(0);
       stage = ScanStage.review;
+      fromRecommendation = true;
       tab = 0;
     });
   }
@@ -2410,7 +2578,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       ),
     ),
   );
-  Widget _notice(String text, {VoidCallback? onTap}) => Container(
+  Widget _notice(String text, {VoidCallback? onTap, String? detail}) => Container(
     padding: EdgeInsets.all(10),
     decoration: BoxDecoration(
       color: isDark ? Color(0xFF1A3A52) : Color(0xFFE5F4FF),
@@ -2423,6 +2591,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         Expanded(
           child: Text(text, style: TextStyle(fontSize: 12, color: ink)),
         ),
+        if (detail != null && detail != text)
+          TextButton(onPressed: () => _showDetail(detail), child: Text('자세히')),
         if (onTap != null)
           IconButton(
             onPressed: onTap,
@@ -2510,6 +2680,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             ),
           ),
   );
-  String _date(DateTime value) =>
-      '${value.year}.${value.month.toString().padLeft(2, '0')}.${value.day.toString().padLeft(2, '0')}  ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+  String _date(DateTime value) => '${_dateOnly(value)} ${_timeOnly(value)}';
+}
+
+extension on String {
+  String ifEmpty(String other) => isEmpty ? other : this;
 }

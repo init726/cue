@@ -175,6 +175,9 @@ class RouteView extends StatefulWidget {
     required this.onEdit,
     required this.onCancel,
     this.busyEventId,
+    this.onKeep,
+    this.focusDate,
+    this.focusRequest = 0,
     this.now,
   });
 
@@ -182,6 +185,13 @@ class RouteView extends StatefulWidget {
   final void Function(Map<String, dynamic> event) onEdit;
   final void Function(Map<String, dynamic> event) onCancel;
   final String? busyEventId;
+
+  /// 겹치는 일정에서 keep만 남기고 drop은 취소한다.
+  final void Function(Map<String, dynamic> keep, List<Map<String, dynamic>> drop)? onKeep;
+
+  /// focusRequest가 바뀔 때마다 focusDate의 하루로 스크롤한다.
+  final DateTime? focusDate;
+  final int focusRequest;
 
   /// 테스트에서 현재 시각을 고정할 때 쓴다.
   final DateTime? now;
@@ -194,6 +204,30 @@ class _RouteViewState extends State<RouteView> {
   final dayKeys = <DateTime, GlobalKey>{};
   String? expandedId;
   bool showPast = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus();
+  }
+
+  @override
+  void didUpdateWidget(RouteView old) {
+    super.didUpdateWidget(old);
+    if (widget.focusRequest != old.focusRequest) _focus();
+  }
+
+  void _focus() {
+    final date = widget.focusDate;
+    if (date == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = dayKeys[DateTime(date.year, date.month, date.day)]?.currentContext;
+      if (target != null && mounted) {
+        Scrollable.ensureVisible(target, duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOutCubic, alignment: 0.05);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -412,8 +446,17 @@ class _RouteViewState extends State<RouteView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(stop.title, style: TextStyle(fontSize: 16, color: palette.ink,
-                        fontWeight: FontWeight.w800, height: 1.3)),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(stop.title, style: TextStyle(fontSize: 16, color: palette.ink,
+                              fontWeight: FontWeight.w800, height: 1.3)),
+                        ),
+                        // 눌러서 수정·취소를 펼칠 수 있다는 표시.
+                        Icon(expanded ? Icons.expand_less : Icons.expand_more, size: 20, color: palette.muted),
+                      ],
+                    ),
                     const SizedBox(height: 4),
                     Text(stop.venue, style: TextStyle(fontSize: 13, color: palette.muted)),
                     const SizedBox(height: 8),
@@ -490,9 +533,36 @@ class _RouteViewState extends State<RouteView> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: BoxDecoration(color: palette.warnSoft, borderRadius: BorderRadius.circular(12)),
-              child: Text(
-                '${cluster.stops.length}개 일정의 시간이 겹쳐요. 갈 길을 하나 골라 주세요.',
-                style: TextStyle(fontSize: 13, color: palette.warn, fontWeight: FontWeight.w700),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${cluster.stops.length}개 일정의 시간이 겹쳐요. 갈 길을 하나 골라 주세요.',
+                    style: TextStyle(fontSize: 13, color: palette.warn, fontWeight: FontWeight.w700),
+                  ),
+                  if (widget.onKeep != null) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (var branch = 0; branch < cluster.stops.length; branch += 1)
+                          OutlinedButton(
+                            onPressed: () => widget.onKeep!(cluster.stops[branch].event, [
+                              for (final other in cluster.stops)
+                                if (other != cluster.stops[branch]) other.event,
+                            ]),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: palette.warn,
+                              side: BorderSide(color: palette.warn),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            child: Text('${String.fromCharCode(65 + branch)}길로 가기'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
           ),

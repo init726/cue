@@ -84,16 +84,16 @@ function send(res, status, body) {
 }
 
 async function readJson(req, maxBytes = 8 * 1024 * 1024) {
-  if (!String(req.headers['content-type'] || '').startsWith('application/json')) throw Object.assign(new Error('JSON 요청이 필요합니다.'), { status: 415 });
+  if (!String(req.headers['content-type'] || '').startsWith('application/json')) throw Object.assign(new Error('JSON 요청이 필요해요.'), { status: 415 });
   let bytes = 0;
   const chunks = [];
   for await (const chunk of req) {
     bytes += chunk.length;
-    if (bytes > maxBytes) throw Object.assign(new Error('요청 데이터가 너무 큽니다.'), { status: 413 });
+    if (bytes > maxBytes) throw Object.assign(new Error('요청 데이터가 너무 커요.'), { status: 413 });
     chunks.push(chunk);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-  catch { throw Object.assign(new Error('JSON 형식이 올바르지 않습니다.'), { status: 400 }); }
+  catch { throw Object.assign(new Error('JSON 형식이 올바르지 않아요.'), { status: 400 }); }
 }
 
 function hash(value) { return createHash('sha256').update(value).digest('hex'); }
@@ -137,9 +137,9 @@ async function cloudProfile(user, changes) {
     ...(changes ? { body: JSON.stringify(changes) } : {}),
     signal: AbortSignal.timeout(10000),
   });
-  if (!response.ok) throw Object.assign(new Error('Supabase 사용자 정보를 읽지 못했습니다.'), { status: 502 });
+  if (!response.ok) throw Object.assign(new Error('Supabase 사용자 정보를 읽지 못했어요.'), { status: 502 });
   const rows = await response.json();
-  if (!Array.isArray(rows) || rows.length !== 1) throw Object.assign(new Error('Supabase 사용자 프로필이 없습니다.'), { status: 502 });
+  if (!Array.isArray(rows) || rows.length !== 1) throw Object.assign(new Error('Supabase 사용자 프로필이 없어요.'), { status: 502 });
   const row = rows[0];
   return {
     userId: row.user_id, onboardingCompleted: row.onboarding_completed,
@@ -184,7 +184,7 @@ const extractionSchema = {
 };
 
 async function askOpenAI(sourceParts, instruction, schema, name) {
-  if (!process.env.OPENAI_API_KEY) throw Object.assign(new Error('서버에 OPENAI_API_KEY가 설정되지 않았습니다.'), { status: 503 });
+  if (!process.env.OPENAI_API_KEY) throw Object.assign(new Error('서버에 OPENAI_API_KEY가 설정되지 않았어요.'), { status: 503 });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
   try {
@@ -204,9 +204,9 @@ async function askOpenAI(sourceParts, instruction, schema, name) {
       throw Object.assign(new Error('AI 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.'), { status: 502 });
     }
     const result = await response.json();
-    if (result.status !== 'completed') throw Object.assign(new Error('AI 응답이 완료되지 않았습니다.'), { status: 502 });
+    if (result.status !== 'completed') throw Object.assign(new Error('AI 응답이 완료되지 않았어요.'), { status: 502 });
     const text = result.output?.flatMap((item) => item.content || []).find((item) => item.type === 'output_text')?.text;
-    if (!text) throw Object.assign(new Error('AI 응답을 읽지 못했습니다.'), { status: 502 });
+    if (!text) throw Object.assign(new Error('AI 응답을 읽지 못했어요.'), { status: 502 });
     return JSON.parse(text);
   } finally { clearTimeout(timeout); }
 }
@@ -219,7 +219,7 @@ export const server = http.createServer(async (req, res) => {
     const ip = req.socket.remoteAddress || 'unknown';
 
     if (req.method === 'POST' && route === '/v1/session') {
-      if (!allowed(`session:${ip}`, 20, 60 * 60 * 1000)) return send(res, 429, { error: '요청이 너무 많습니다.' });
+      if (!allowed(`session:${ip}`, 20, 60 * 60 * 1000)) return send(res, 429, { error: '요청이 너무 많아요.' });
       if (supabaseUrl && supabasePublishableKey) return send(res, 403, { error: 'Supabase 익명 로그인을 사용해 주세요.' });
       const token = randomBytes(32).toString('hex');
       const id = randomUUID();
@@ -228,12 +228,12 @@ export const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && route === '/v1/catalog/import') {
-      if (!allowed(`catalog:${ip}`, 30, 60 * 60 * 1000)) return send(res, 429, { error: '요청이 너무 많습니다.' });
+      if (!allowed(`catalog:${ip}`, 30, 60 * 60 * 1000)) return send(res, 429, { error: '요청이 너무 많아요.' });
       const given = String(req.headers.authorization || '').replace(/^Bearer /, '');
       const admin = process.env.CATALOG_ADMIN_TOKEN || '';
-      if (!admin || given.length !== admin.length || !timingSafeEqual(Buffer.from(given), Buffer.from(admin))) return send(res, 403, { error: '관리자 인증이 필요합니다.' });
+      if (!admin || given.length !== admin.length || !timingSafeEqual(Buffer.from(given), Buffer.from(admin))) return send(res, 403, { error: '관리자 인증이 필요해요.' });
       const body = await readJson(req, 128 * 1024);
-      if (!Array.isArray(body.events) || body.events.length > 100) return send(res, 400, { error: 'events 배열이 필요합니다.' });
+      if (!Array.isArray(body.events) || body.events.length > 100) return send(res, 400, { error: 'events 배열이 필요해요.' });
       const events = body.events.map(validateSavedEvent);
       if (supabaseUrl && supabasePublishableKey) await importCloudCatalog(events);
       store.importCatalog(events);
@@ -242,13 +242,13 @@ export const server = http.createServer(async (req, res) => {
 
     const user = await userFor(req);
     if (!user) return send(res, 401, { error: '다시 로그인해 주세요.' });
-    if (!allowed(`user:${user.id}`, 300, 60 * 60 * 1000)) return send(res, 429, { error: '요청이 너무 많습니다.' });
+    if (!allowed(`user:${user.id}`, 300, 60 * 60 * 1000)) return send(res, 429, { error: '요청이 너무 많아요.' });
     if (req.method === 'POST' && route === '/v1/account/claim') {
-      if (!user.supabase) return send(res, 403, { error: 'Supabase 인증이 필요합니다.' });
+      if (!user.supabase) return send(res, 403, { error: 'Supabase 인증이 필요해요.' });
       const body = await readJson(req, 4096);
       const legacyToken = String(body.legacyToken || '');
       const old = /^[a-f0-9]{64}$/.test(legacyToken) ? store.userByTokenHash(hash(legacyToken)) : null;
-      if (!old || old.id === user.id) return send(res, 404, { error: '이전 사용자 데이터를 찾지 못했습니다.' });
+      if (!old || old.id === user.id) return send(res, 404, { error: '이전 사용자 데이터를 찾지 못했어요.' });
       const oldProfile = store.profile(old.id);
       await cloudProfile(user, {
         onboarding_completed: oldProfile.onboardingCompleted,
@@ -258,7 +258,7 @@ export const server = http.createServer(async (req, res) => {
         updated_at: new Date().toISOString(),
       });
       if (!store.claimLegacyAccount(user.id, hash(legacyToken)))
-        return send(res, 404, { error: '이전 사용자 데이터를 찾지 못했습니다.' });
+        return send(res, 404, { error: '이전 사용자 데이터를 찾지 못했어요.' });
       return send(res, 200, { claimed: true });
     }
     const data = user.supabase ? new CloudStore(user) : store;
@@ -327,39 +327,39 @@ export const server = http.createServer(async (req, res) => {
       const body = await readJson(req, 4096);
       const eventId = String(body.eventId || '');
       const event = await data.eventVisible(user.id, eventId);
-      if (!event) return send(res, 404, { error: '행사를 찾을 수 없습니다.' });
+      if (!event) return send(res, 404, { error: '행사를 찾을 수 없어요.' });
       const title = String(body.title || `${event.title} 계획`).trim().slice(0,120);
-      if (!title) return send(res, 400, { error: '목표 이름이 필요합니다.' });
+      if (!title) return send(res, 400, { error: '목표 이름이 필요해요.' });
       return send(res, 201, { goal: await data.createGoal(user.id,eventId,title) });
     }
     if (req.method === 'POST' && route === '/v1/interactions') {
       const body = await readJson(req, 4096);
       const action = String(body.action || '');
       if (!['viewed','interested','not_interested','recommendation_opened','recommendation_dismissed','completed'].includes(action))
-        return send(res, 400, { error: '지원하지 않는 행동입니다.' });
-      if (!(await data.interact(user.id,String(body.eventId || ''),action, { reason: ['관심 없는 분야','시간 안 맞음','장소가 멂','참가 조건 안 맞음','이미 알고 있는 행사'].includes(body.reason) ? body.reason : null }))) return send(res, 404, { error: '행사를 찾을 수 없습니다.' });
+        return send(res, 400, { error: '지원하지 않는 행동이에요.' });
+      if (!(await data.interact(user.id,String(body.eventId || ''),action, { reason: ['관심 없는 분야','시간 안 맞음','장소가 멂','참가 조건 안 맞음','이미 알고 있는 행사'].includes(body.reason) ? body.reason : null }))) return send(res, 404, { error: '행사를 찾을 수 없어요.' });
       return send(res, 201, { recorded: true });
     }
     if (req.method === 'DELETE' && route === '/v1/account') {
       if (user.supabase) {
-        if (!supabaseServiceRoleKey) return send(res, 503, { error: '계정 삭제 서버 설정이 필요합니다.' });
+        if (!supabaseServiceRoleKey) return send(res, 503, { error: '계정 삭제 서버 설정이 필요해요.' });
         const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/users/${user.id}`, {
           method: 'DELETE', headers: { apikey: supabaseServiceRoleKey, authorization: `Bearer ${supabaseServiceRoleKey}` },
           signal: AbortSignal.timeout(10000),
         });
-        if (!response.ok) return send(res, 502, { error: '인증 계정 삭제에 실패했습니다.' });
+        if (!response.ok) return send(res, 502, { error: '인증 계정 삭제에 실패했어요.' });
       }
       store.deleteAccount(user.id);
       return send(res, 200, { deleted: true });
     }
     if (req.method === 'POST' && route === '/v1/analyze') {
-      if (!allowed(`analyze:${user.id}`, 30, 60 * 60 * 1000)) return send(res, 429, { error: '분석 횟수를 초과했습니다.' });
+      if (!allowed(`analyze:${user.id}`, 30, 60 * 60 * 1000)) return send(res, 429, { error: '분석 횟수를 초과했어요.' });
       const body = await readJson(req, 15 * 1024 * 1024);
       let sourceParts;
       if (body.file) sourceParts = await documentInput(body.file);
       else {
         const image = String(body.image || '');
-        if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > 7_000_000) return send(res, 400, { error: 'JPG, PNG, WebP 이미지(5MB 이하)가 필요합니다.' });
+        if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > 7_000_000) return send(res, 400, { error: 'JPG, PNG, WebP 이미지(5MB 이하)가 필요해요.' });
         sourceParts = [{ type: 'input_image', image_url: image, detail: 'high' }];
       }
       const classification = await askOpenAI(sourceParts,
@@ -392,18 +392,18 @@ export const server = http.createServer(async (req, res) => {
     const eventRoute = /^\/v1\/events\/([0-9a-f-]{36})$/.exec(route);
     if (eventRoute && ['PATCH', 'DELETE'].includes(req.method)) {
       if (req.method === 'DELETE') {
-        if (!(await data.removeSaved(user.id,eventRoute[1]))) return send(res, 404, { error: '저장된 일정을 찾을 수 없습니다.' });
+        if (!(await data.removeSaved(user.id,eventRoute[1]))) return send(res, 404, { error: '저장된 일정을 찾을 수 없어요.' });
         return send(res, 200, { deleted: true });
       }
       const body = await readJson(req, 16 * 1024);
       const event = await data.updateSaved(user.id,eventRoute[1],validateSavedEvent(body));
-      if (!event) return send(res, 404, { error: '저장된 일정을 찾을 수 없습니다.' });
+      if (!event) return send(res, 404, { error: '저장된 일정을 찾을 수 없어요.' });
       return send(res, 200, { event });
     }
-    return send(res, 404, { error: '경로를 찾을 수 없습니다.' });
+    return send(res, 404, { error: '경로를 찾을 수 없어요.' });
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
-    send(res, error.status || 500, { error: error.status ? error.message : '서버 오류가 발생했습니다.' });
+    send(res, error.status || 500, { error: error.status ? error.message : '서버 오류가 발생했어요.' });
   }
 });
 

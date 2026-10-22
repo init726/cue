@@ -43,7 +43,7 @@ function visitDate(detail, currentTime, usedDates) {
 export async function discoverSemaExhibitions({ fetchImpl = fetch, currentTime = Date.now() } = {}) {
   const headers = { 'user-agent': 'Cue event recommendations (contact: github.com/1NlT/cue)' };
   const listResponse = await fetchImpl(listingUrl, { headers, signal: AbortSignal.timeout(15000) });
-  if (!listResponse.ok) throw new Error('서울시립미술관 목록을 읽지 못했습니다.');
+  if (!listResponse.ok) throw new Error('서울시립미술관 목록을 읽지 못했어요.');
   const listing = parseSemaListing(await listResponse.text()).slice(0, 12);
   const details = await Promise.all(listing.map(async (item) => {
     try {
