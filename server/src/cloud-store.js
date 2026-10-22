@@ -61,7 +61,7 @@ export class CloudStore {
     if (method === 'GET') url.searchParams.set('select', select);
     if (upsert) url.searchParams.set('on_conflict', upsert);
     const serviceKey = computed ? process.env.SUPABASE_SERVICE_ROLE_KEY : null;
-    if (computed && !serviceKey) throw Object.assign(new Error('Supabase 계산 데이터 서버 키가 필요합니다.'), { status: 503 });
+    if (computed && !serviceKey) throw Object.assign(new Error('Supabase 계산 데이터 서버 키가 필요해요.'), { status: 503 });
     const headers = { apikey: serviceKey || this.key, authorization: `Bearer ${serviceKey || this.token}` };
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (method !== 'GET') headers.prefer = `${upsert ? 'resolution=merge-duplicates,' : ''}return=representation`;
@@ -75,7 +75,7 @@ export class CloudStore {
       if (!response.ok) {
         const detail = await response.json().catch(() => ({}));
         console.error('Supabase request failed:', table, method, response.status, detail.code || 'unknown');
-        throw Object.assign(new Error('Supabase 데이터 저장에 실패했습니다.'), { status: 502 });
+        throw Object.assign(new Error('Supabase 데이터 저장에 실패했어요.'), { status: 502 });
       }
       return response.status === 204 ? [] : response.json();
     };
@@ -307,7 +307,7 @@ export class CloudStore {
 export async function importCloudCatalog(events) {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw Object.assign(new Error('Supabase 카탈로그 서버 키가 필요합니다.'), { status: 503 });
+  if (!url || !key) throw Object.assign(new Error('Supabase 카탈로그 서버 키가 필요해요.'), { status: 503 });
   const write = async (table, rows) => {
     const response = await fetch(`${url}/rest/v1/${table}`, {
       method: 'POST',
@@ -317,7 +317,7 @@ export async function importCloudCatalog(events) {
     });
     if (!response.ok) {
       console.error('Supabase catalog import failed:', table, response.status);
-      throw Object.assign(new Error('Supabase 행사 목록 저장에 실패했습니다.'), { status: 502 });
+      throw Object.assign(new Error('Supabase 행사 목록 저장에 실패했어요.'), { status: 502 });
     }
   };
   await write('events', events.map((event) => eventRow(event, null, 'catalog')));

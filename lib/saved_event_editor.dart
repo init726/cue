@@ -134,7 +134,7 @@ class _SavedEventEditorState extends State<SavedEventEditor> {
     if (!end.isAfter(start) || end.difference(start) > Duration(days: 7)) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('종료 시간은 시작 이후 7일 이내여야 합니다.')));
+      ).showSnackBar(SnackBar(content: Text('종료 시간은 시작 이후 7일 이내여야 해요.')));
       return;
     }
     Navigator.pop(

@@ -56,12 +56,14 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final edited = <String>[];
+    final kept = <String>[];
     await tester.pumpWidget(MaterialApp(
       theme: cueTheme(Brightness.light),
       home: Scaffold(
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
-          child: RouteView(events: events, now: now, onEdit: (e) => edited.add(e['id']), onCancel: (_) {}),
+          child: RouteView(events: events, now: now, onEdit: (e) => edited.add(e['id']), onCancel: (_) {},
+              onKeep: (keep, drop) => kept.addAll([keep['id'], for (final e in drop) '-${e['id']}'])),
         ),
       ),
     ));
@@ -74,8 +76,13 @@ void main() {
     expect(find.text('A길'), findsOneWidget);
     expect(find.text('B길'), findsOneWidget);
     expect(find.text('지난 일정 1개'), findsOneWidget);
+    await tester.ensureVisible(find.text('B길로 가기'));
+    await tester.tap(find.text('B길로 가기'));
+    expect(kept, ['e', '-d']);
+    await tester.ensureVisible(find.text('행사 b'));
     await tester.tap(find.text('행사 b'));
     await tester.pump();
+    await tester.ensureVisible(find.text('수정'));
     await tester.tap(find.text('수정'));
     expect(edited, ['b']);
   });

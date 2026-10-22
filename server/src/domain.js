@@ -77,18 +77,18 @@ export function validateSavedEvent(body) {
   const start = Date.parse(body.startsAt);
   const end = Date.parse(body.endsAt);
   if (!title || !venue || !hasTimezone(String(body.startsAt || '')) || !hasTimezone(String(body.endsAt || '')) || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
-    throw invalid('행사 이름, 장소, 올바른 시작·종료 시간이 필요합니다.');
+    throw invalid('행사 이름, 장소, 올바른 시작·종료 시간이 필요해요.');
   }
-  if (end - start > 7 * 24 * 60 * 60 * 1000) throw invalid('행사 기간이 너무 깁니다.');
+  if (end - start > 7 * 24 * 60 * 60 * 1000) throw invalid('행사 기간이 너무 길어요.');
   const calendarId = typeof body.calendarId === 'string' ? body.calendarId.trim().slice(0, 256) : null;
   const calendarEventId = typeof body.calendarEventId === 'string' ? body.calendarEventId.trim().slice(0, 256) : null;
-  if (Boolean(calendarId) !== Boolean(calendarEventId)) throw invalid('캘린더 연결 정보가 올바르지 않습니다.');
+  if (Boolean(calendarId) !== Boolean(calendarEventId)) throw invalid('캘린더 연결 정보가 올바르지 않아요.');
   const reminderMinutes = body.reminderMinutes == null ? null : Number(body.reminderMinutes);
-  if (reminderMinutes != null && ![-1, 15, 60, 1440].includes(reminderMinutes)) throw invalid('알림 설정이 올바르지 않습니다.');
+  if (reminderMinutes != null && ![-1, 15, 60, 1440].includes(reminderMinutes)) throw invalid('알림 설정이 올바르지 않아요.');
   const tags = (Array.isArray(body.tags) ? body.tags : []).filter((tag) => typeof tag === 'string')
     .map((tag) => tag.trim().slice(0, 40)).filter(Boolean).slice(0, 8);
   const applicationDeadline = body.applicationDeadline == null ? null : String(body.applicationDeadline);
-  if (applicationDeadline && (!hasTimezone(applicationDeadline) || !Number.isFinite(Date.parse(applicationDeadline)))) throw invalid('신청 마감일이 올바르지 않습니다.');
+  if (applicationDeadline && (!hasTimezone(applicationDeadline) || !Number.isFinite(Date.parse(applicationDeadline)))) throw invalid('신청 마감일이 올바르지 않아요.');
   const sourceUrl = typeof body.sourceUrl === 'string' && /^https:\/\//.test(body.sourceUrl) ? body.sourceUrl.slice(0, 500) : null;
   const classification = classifyEvent(body);
   return {

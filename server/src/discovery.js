@@ -115,7 +115,7 @@ export async function discoverEvents(topic, { fetchImpl = fetch, currentTime = D
   });
   if (!response.ok) {
     console.error('OpenAI discovery status:', response.status);
-    throw new Error('행사 검색에 실패했습니다.');
+    throw new Error('행사 검색에 실패했어요.');
   }
   return verifiedDiscoveries(await response.json(), currentTime)
     .filter((event) => categoryGroup(event.category) === family &&
