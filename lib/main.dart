@@ -18,11 +18,11 @@ import 'cue_route.dart';
 import 'cue_splash.dart';
 import 'saved_event_editor.dart';
 
-const ink = Color(0xFF17344E);
-const muted = Color(0xFF65809A);
-const paper = Color(0xFFF4FAFF);
-const accent = Color(0xFF238BD0);
-const mint = Color(0xFFE5F4FF);
+const ink = Color(0xFF181A1D);
+const muted = Color(0xFF697078);
+const paper = Color(0xFFF7F8FA);
+const accent = Color(0xFF169ED3);
+const mint = Color(0xFFE8F7FD);
 final cueThemeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
 const cueApiUrl = String.fromEnvironment(
   'CUE_API_URL',
@@ -31,10 +31,10 @@ const cueApiUrl = String.fromEnvironment(
 
 ThemeData cueTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final background = dark ? const Color(0xFF0B1928) : paper;
-  final surface = dark ? const Color(0xFF15283A) : Colors.white;
-  final foreground = dark ? const Color(0xFFEDF7FF) : ink;
-  final blue = dark ? const Color(0xFF75C9FF) : accent;
+  final background = dark ? const Color(0xFF101214) : paper;
+  final surface = dark ? const Color(0xFF1A1D20) : Colors.white;
+  final foreground = dark ? const Color(0xFFF4F5F6) : ink;
+  final blue = dark ? const Color(0xFF55C7F3) : accent;
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
@@ -44,6 +44,27 @@ ThemeData cueTheme(Brightness brightness) {
       brightness: brightness,
       surface: surface,
     ),
+    dividerColor: dark ? const Color(0xFF303438) : const Color(0xFFE8EBEE),
+    navigationBarTheme: NavigationBarThemeData(
+      height: 68,
+      elevation: 0,
+      backgroundColor: surface,
+      indicatorColor: dark ? const Color(0xFF29343A) : mint,
+      labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
+        fontSize: 11,
+        fontWeight: states.contains(WidgetState.selected) ? FontWeight.w800 : FontWeight.w600,
+        color: states.contains(WidgetState.selected) ? blue : (dark ? const Color(0xFFA9AFB5) : muted),
+      )),
+      iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
+        size: 23,
+        color: states.contains(WidgetState.selected) ? blue : (dark ? const Color(0xFFA9AFB5) : muted),
+      )),
+    ),
+    filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
+      minimumSize: const Size(0, 52),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+    )),
     textTheme: TextTheme(
       headlineLarge: TextStyle(
         fontSize: 32,
@@ -119,14 +140,14 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   bool readyForShares = false;
   bool takingSharedFile = false;
   bool get isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get ink => isDark ? Color(0xFFEDF7FF) : Color(0xFF17344E);
-  Color get muted => isDark ? Color(0xFFA2BDD0) : Color(0xFF65809A);
-  Color get paper => isDark ? Color(0xFF0B1928) : Color(0xFFF4FAFF);
-  Color get accent => isDark ? Color(0xFF75C9FF) : Color(0xFF238BD0);
-  Color get mint => isDark ? Color(0xFF193D58) : Color(0xFFE5F4FF);
-  Color get surface => isDark ? Color(0xFF15283A) : Colors.white;
-  Color get borderColor => isDark ? Color(0xFF2B4861) : Color(0xFFDCEBF5);
-  Color get cameraCard => isDark ? Color(0xFF173D58) : Color(0xFF146DAB);
+  Color get ink => isDark ? Color(0xFFF4F5F6) : Color(0xFF181A1D);
+  Color get muted => isDark ? Color(0xFFA9AFB5) : Color(0xFF697078);
+  Color get paper => isDark ? Color(0xFF101214) : Color(0xFFF7F8FA);
+  Color get accent => isDark ? Color(0xFF55C7F3) : Color(0xFF169ED3);
+  Color get mint => isDark ? Color(0xFF25343A) : Color(0xFFE8F7FD);
+  Color get surface => isDark ? Color(0xFF1A1D20) : Colors.white;
+  Color get borderColor => isDark ? Color(0xFF303438) : Color(0xFFE7EAED);
+  Color get cameraCard => isDark ? Color(0xFF202326) : Color(0xFF169ED3);
 
   final api = CueApi(cueApiUrl);
   final picker = ImagePicker();
@@ -1133,12 +1154,21 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ],
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tab,
-        onDestinationSelected: (value) => setState(() => tab = value),
-        backgroundColor: surface,
-        indicatorColor: mint,
-        destinations: [
+      bottomNavigationBar: SafeArea(
+        minimum: EdgeInsets.fromLTRB(14, 0, 14, 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: surface,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: borderColor),
+            boxShadow: isDark ? null : [BoxShadow(
+              color: Colors.black.withValues(alpha: 0.07), blurRadius: 24, offset: Offset(0, 8))],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: NavigationBar(
+            selectedIndex: tab,
+            onDestinationSelected: (value) => setState(() => tab = value),
+            destinations: [
           NavigationDestination(
             icon: Icon(Icons.camera_alt_outlined),
             selectedIcon: Icon(Icons.camera_alt),
@@ -1159,7 +1189,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             selectedIcon: Icon(Icons.tune),
             label: '설정',
           ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1174,23 +1206,24 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         : RefreshIndicator(color: accent, onRefresh: onRefresh, child: view);
   }
   Widget _header() => Padding(
-    padding: EdgeInsets.fromLTRB(22, 18, 22, 10),
+    padding: EdgeInsets.fromLTRB(22, 14, 22, 8),
     child: Row(
       children: [
         Container(
-          width: 40,
-          height: 40,
+          width: 35,
+          height: 35,
           decoration: BoxDecoration(
             color: accent,
-            borderRadius: BorderRadius.circular(13),
+            shape: BoxShape.circle,
           ),
-          child: Icon(Icons.camera_alt_outlined, color: Colors.white, size: 23),
+          child: Icon(Icons.camera_alt_rounded,
+              color: isDark ? Color(0xFF101214) : Colors.white, size: 19),
         ),
         SizedBox(width: 11),
         Text(
           'cue',
           style: TextStyle(
-            fontSize: 27,
+            fontSize: 25,
             fontWeight: FontWeight.w900,
             color: ink,
             letterSpacing: -1.5,
@@ -1289,12 +1322,14 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   Widget _home() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      SizedBox(height: 12),
+      SizedBox(height: 8),
+      _tag('사진 한 장 → 일정 하나'),
+      SizedBox(height: 16),
       Text(
         '행사 안내를\n캘린더에 저장하세요',
         style: TextStyle(
-          fontSize: 33,
-          height: 1.23,
+          fontSize: 34,
+          height: 1.15,
           fontWeight: FontWeight.w900,
           color: ink,
           letterSpacing: -1,
@@ -1305,7 +1340,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         '확인한 일정만 캘린더에 저장돼요.',
         style: TextStyle(fontSize: 15, height: 1.55, color: muted),
       ),
-      SizedBox(height: 28),
+      SizedBox(height: 24),
       if (stage == ScanStage.idle) _captureCard(),
       if (stage == ScanStage.processing) _progressCard(),
       if (stage == ScanStage.notEvent) _notEventCard(),
@@ -1317,10 +1352,19 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   );
 
   Widget _captureCard() => Container(
-    padding: EdgeInsets.all(23),
+    padding: EdgeInsets.all(22),
     decoration: BoxDecoration(
-      color: cameraCard,
-      borderRadius: BorderRadius.circular(28),
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: isDark
+            ? [Color(0xFF202326), Color(0xFF181A1D)]
+            : [Color(0xFF20A9DD), Color(0xFF118CC3)],
+      ),
+      borderRadius: BorderRadius.circular(26),
+      border: isDark ? Border.all(color: Color(0xFF34383C)) : null,
+      boxShadow: isDark ? null : [BoxShadow(
+        color: accent.withValues(alpha: 0.2), blurRadius: 28, offset: Offset(0, 12))],
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1361,7 +1405,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           SizedBox(height: 18),
         ],
         Text(
-          '포스터나 공지문을 골라 주세요',
+          '무엇을 일정으로 바꿀까요?',
           style: TextStyle(
             fontSize: 21,
             fontWeight: FontWeight.w800,
@@ -1370,8 +1414,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         ),
         SizedBox(height: 7),
         Text(
-          '사진뿐 아니라 PDF·한글(HWP) 공지문도 읽을 수 있어요.',
-          style: TextStyle(color: Color(0xFFD9F0FF)),
+          '포스터를 찍거나 가지고 있는 문서를 선택하세요.',
+          style: TextStyle(color: isDark ? Color(0xFFB7BCC1) : Color(0xFFE8F8FF)),
         ),
         SizedBox(height: 23),
         _button(
@@ -2388,7 +2432,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                     label: Text('일정에 추가'),
                     style: FilledButton.styleFrom(
                       backgroundColor: accent,
-                      foregroundColor: isDark ? Color(0xFF0B1928) : Colors.white,
+                      foregroundColor: isDark ? Color(0xFF101214) : Colors.white,
                       minimumSize: Size.fromHeight(48),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       textStyle: TextStyle(fontWeight: FontWeight.w800),
@@ -2579,10 +2623,11 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     ),
   );
   Widget _notice(String text, {VoidCallback? onTap, String? detail}) => Container(
-    padding: EdgeInsets.all(10),
+    padding: EdgeInsets.fromLTRB(13, 10, 8, 10),
     decoration: BoxDecoration(
-      color: isDark ? Color(0xFF1A3A52) : Color(0xFFE5F4FF),
-      borderRadius: BorderRadius.circular(12),
+      color: isDark ? Color(0xFF20282C) : Color(0xFFEAF8FD),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: isDark ? Color(0xFF304047) : Color(0xFFD6EEF8)),
     ),
     child: Row(
       children: [
@@ -2604,11 +2649,13 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   );
   Widget _card(Widget child) => Container(
     width: double.infinity,
-    padding: EdgeInsets.all(20),
+    padding: EdgeInsets.all(19),
     decoration: BoxDecoration(
       color: surface,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(24),
       border: Border.all(color: borderColor),
+      boxShadow: isDark ? null : [BoxShadow(
+        color: Colors.black.withValues(alpha: 0.035), blurRadius: 18, offset: Offset(0, 5))],
     ),
     child: child,
   );
@@ -2616,7 +2663,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     value,
     style: TextStyle(
       fontSize: 12,
-      letterSpacing: 1.1,
+      letterSpacing: 0.7,
       color: accent,
       fontWeight: FontWeight.w900,
     ),
@@ -2625,7 +2672,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
     decoration: BoxDecoration(
       color: mint,
-      borderRadius: BorderRadius.circular(50),
+      borderRadius: BorderRadius.circular(10),
     ),
     child: Text(
       value,
@@ -2669,10 +2716,10 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             icon: Icon(icon),
             label: Text(label),
             style: FilledButton.styleFrom(
-              backgroundColor: light ? Color(0xFFE0F3FF) : accent,
+              backgroundColor: light ? Color(0xFFF3FBFF) : accent,
               foregroundColor: light
-                  ? Color(0xFF17344E)
-                  : (isDark ? Color(0xFF0B1928) : Colors.white),
+                  ? Color(0xFF126E93)
+                  : (isDark ? Color(0xFF101214) : Colors.white),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15),
               ),

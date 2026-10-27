@@ -157,13 +157,13 @@ class _Palette {
 
   final bool dark;
 
-  Color get ink => dark ? const Color(0xFFEDF7FF) : const Color(0xFF17344E);
-  Color get muted => dark ? const Color(0xFFA2BDD0) : const Color(0xFF65809A);
-  Color get accent => dark ? const Color(0xFF75C9FF) : const Color(0xFF238BD0);
-  Color get mint => dark ? const Color(0xFF193D58) : const Color(0xFFE5F4FF);
-  Color get surface => dark ? const Color(0xFF15283A) : Colors.white;
-  Color get border => dark ? const Color(0xFF2B4861) : const Color(0xFFDCEBF5);
-  Color get cue => dark ? const Color(0xFF173D58) : const Color(0xFF146DAB);
+  Color get ink => dark ? const Color(0xFFF4F5F6) : const Color(0xFF181A1D);
+  Color get muted => dark ? const Color(0xFFA9AFB5) : const Color(0xFF697078);
+  Color get accent => dark ? const Color(0xFF55C7F3) : const Color(0xFF169ED3);
+  Color get mint => dark ? const Color(0xFF25343A) : const Color(0xFFE8F7FD);
+  Color get surface => dark ? const Color(0xFF1A1D20) : Colors.white;
+  Color get border => dark ? const Color(0xFF303438) : const Color(0xFFE7EAED);
+  Color get cue => dark ? const Color(0xFF24292C) : const Color(0xFF169ED3);
   Color get warn => dark ? const Color(0xFFFFB86B) : const Color(0xFFC96A12);
   Color get warnSoft => dark ? const Color(0xFF3A2A17) : const Color(0xFFFFF1E2);
 }
@@ -383,7 +383,7 @@ class _RouteViewState extends State<RouteView> {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: palette.accent, borderRadius: BorderRadius.circular(50)),
                 child: Text(badge, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800,
-                    color: palette.dark ? const Color(0xFF0B1928) : Colors.white)),
+                    color: palette.dark ? const Color(0xFF101214) : Colors.white)),
               ),
           ],
         ),
