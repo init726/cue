@@ -40,6 +40,7 @@ ThemeData cueTheme(Brightness brightness) {
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
+    fontFamily: 'Pretendard',
     scaffoldBackgroundColor: background,
     colorScheme: ColorScheme.fromSeed(
       seedColor: blue,
@@ -57,6 +58,7 @@ ThemeData cueTheme(Brightness brightness) {
       indicatorColor: Colors.transparent,
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
+        fontFamily: 'Pretendard',
         fontSize: 11,
         fontWeight: states.contains(WidgetState.selected) ? FontWeight.w600 : FontWeight.w500,
         color: states.contains(WidgetState.selected) ? foreground : (dark ? const Color(0xFF8A9097) : muted),
@@ -67,29 +69,35 @@ ThemeData cueTheme(Brightness brightness) {
       )),
     ),
     filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
+      backgroundColor: blue,
+      foregroundColor: dark ? const Color(0xFF101214) : Colors.white,
       minimumSize: const Size(0, 50),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CueRadius.control)),
-      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      textStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 16, fontWeight: FontWeight.w600),
     )),
     outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CueRadius.control)),
-      textStyle: const TextStyle(fontWeight: FontWeight.w600),
+      textStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 16, fontWeight: FontWeight.w600),
     )),
     textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(
       foregroundColor: blue,
-      textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      textStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 15, fontWeight: FontWeight.w600),
     )),
     chipTheme: ChipThemeData(
       shape: const StadiumBorder(),
-      side: BorderSide(color: dark ? const Color(0xFF303438) : const Color(0xFFE2E5E8)),
+      side: BorderSide.none,
       showCheckmark: false,
-      labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      backgroundColor: surface,
+      selectedColor: foreground,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      labelStyle: TextStyle(fontFamily: 'Pretendard', fontSize: 14, fontWeight: FontWeight.w500, color: foreground),
+      secondaryLabelStyle: TextStyle(fontFamily: 'Pretendard', fontSize: 14, fontWeight: FontWeight.w600, color: background),
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       elevation: 0,
       backgroundColor: dark ? const Color(0xFF2A2E32) : const Color(0xFF23262A),
-      contentTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+      contentTextStyle: const TextStyle(fontFamily: 'Pretendard', color: Colors.white, fontWeight: FontWeight.w500),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CueRadius.control)),
       actionTextColor: blue,
     ),
@@ -100,7 +108,8 @@ ThemeData cueTheme(Brightness brightness) {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: surface,
+      // 입력칸은 회색 카드 위에 놓이므로 바탕색으로 채운다.
+      fillColor: background,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(CueRadius.control),
         borderSide: BorderSide.none,
@@ -538,7 +547,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
 
   static const _weekdayNames = ['월', '화', '수', '목', '금', '토', '일'];
   String _dateOnly(DateTime value) =>
-      '${value.year}.${value.month.toString().padLeft(2, '0')}.${value.day.toString().padLeft(2, '0')} (${_weekdayNames[value.weekday - 1]})';
+      '${value.year == DateTime.now().year ? '' : '${value.year}년 '}${value.month}월 ${value.day}일 (${_weekdayNames[value.weekday - 1]})';
   String _timeOnly(DateTime value) =>
       '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
@@ -1343,7 +1352,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (idle) ..._homeGreeting() else _pageTitle('스캔'),
+        if (idle) ..._homeGreeting()
+        else if (stage != ScanStage.review && stage != ScanStage.saved) _pageTitle('스캔'),
         SizedBox(height: idle ? 24 : 16),
         if (idle) _captureCard(),
         if (stage == ScanStage.processing) _progressCard(),
@@ -1585,24 +1595,28 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 네 칸짜리 진행 막대. 지난 단계와 현재 단계만 강조색으로 채운다.
         Row(children: [
-          Text('${reviewStep + 1} / 4', style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
-          SizedBox(width: 12),
-          Expanded(child: ClipRRect(
-            borderRadius: BorderRadius.circular(CueRadius.card),
-            child: LinearProgressIndicator(
-              value: (reviewStep + 1) / 4,
-              minHeight: 7,
-              backgroundColor: mint,
-              color: accent,
-            ),
-          )),
+          for (var i = 0; i < 4; i += 1) ...[
+            if (i > 0) SizedBox(width: 4),
+            Expanded(child: AnimatedContainer(
+              duration: Duration(milliseconds: 240),
+              height: 4,
+              decoration: BoxDecoration(
+                color: i <= reviewStep ? accent : surface,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            )),
+          ],
         ]),
-        SizedBox(height: 14),
-        Text(labels[reviewStep], style: TextStyle(fontSize: 27, fontWeight: FontWeight.w700, color: ink)),
-        SizedBox(height: 5),
-        Text('AI가 읽은 내용을 한 단계씩 확인해 주세요.', style: TextStyle(color: muted)),
         SizedBox(height: 20),
+        Text('${reviewStep + 1}/4', style: CueType.label.copyWith(color: muted)),
+        SizedBox(height: 4),
+        Text(labels[reviewStep], style: CueType.largeTitle.copyWith(color: ink)),
+        SizedBox(height: 4),
+        Text(fromRecommendation ? '일정에 담기 전에 내용을 확인해 주세요.' : '포스터에서 읽은 내용이에요. 맞는지 확인해 주세요.',
+            style: CueType.body.copyWith(color: muted, fontSize: 15)),
+        SizedBox(height: 24),
         AnimatedSwitcher(
           duration: Duration(milliseconds: 280),
           transitionBuilder: (child, animation) => FadeTransition(
@@ -1625,23 +1639,25 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         SizedBox(height: 18),
         Row(children: [
           if (reviewStep > 0) ...[
-            Expanded(child: OutlinedButton.icon(
+            Expanded(child: FilledButton(
               onPressed: () => _setReviewStep(reviewStep - 1),
-              icon: Icon(Icons.arrow_back_rounded),
-              label: Text('이전'),
-              style: OutlinedButton.styleFrom(minimumSize: Size.fromHeight(54)),
+              style: FilledButton.styleFrom(
+                backgroundColor: surface,
+                foregroundColor: ink,
+                minimumSize: Size.fromHeight(52),
+              ),
+              child: Text('이전'),
             )),
             SizedBox(width: 10),
           ],
           Expanded(
             flex: reviewStep > 0 ? 2 : 1,
-            child: FilledButton.icon(
+            child: FilledButton(
               onPressed: saving ? null : reviewStep == 3 ? _save : _nextReviewStep,
-              icon: Icon(reviewStep == 3 ? Icons.event_available_rounded : Icons.arrow_forward_rounded),
-              label: Text(reviewStep == 3
+              style: FilledButton.styleFrom(minimumSize: Size.fromHeight(52)),
+              child: Text(reviewStep == 3
                   ? (saving ? '저장하는 중...' : '캘린더에 저장')
                   : '다음'),
-              style: FilledButton.styleFrom(minimumSize: Size.fromHeight(54)),
             ),
           ),
         ]),
@@ -1661,17 +1677,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   Widget _reviewTitlePage(CueEvent event) => _card(Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Container(
-        width: 54, height: 54,
-        decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(CueRadius.card)),
-        child: Icon(Icons.celebration_rounded, color: accent),
-      ),
-      SizedBox(height: 18),
       TextField(
         controller: titleController,
         maxLength: 120,
         autofocus: false,
-        decoration: InputDecoration(labelText: '행사 이름', hintText: '포스터에 적힌 행사 이름'),
+        style: CueType.headline.copyWith(color: ink),
+        decoration: InputDecoration(labelText: '행사 이름', hintText: '포스터에 적힌 행사 이름', counterText: ''),
       ),
       if (event.description.isNotEmpty) ...[
         SizedBox(height: 8),
@@ -1681,16 +1692,16 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     ],
   ));
 
-  Widget _reviewCategoryPage() => _card(Column(
+  // 칩은 회색 바탕이라 카드 없이 화면 바탕에 바로 놓는다.
+  Widget _reviewCategoryPage() => Padding(padding: EdgeInsets.zero, child: Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text('가장 가까운 종류를 선택하세요',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: ink)),
-      SizedBox(height: 4),
-      Text('선택한 종류는 추천 정확도에 반영돼요.', style: TextStyle(color: muted, fontSize: 13)),
+      Text('가장 가까운 종류를 골라 주세요', style: CueType.headline.copyWith(color: ink)),
+      SizedBox(height: 2),
+      Text('고른 종류는 추천에 반영돼요.', style: CueType.caption.copyWith(color: muted)),
       SizedBox(height: 18),
       for (final group in cueCategoryGroups.entries) ...[
-        Text(group.key, style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w600)),
+        _eyebrow(group.key),
         SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -1698,8 +1709,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           children: [for (final value in group.value) ChoiceChip(
             label: Text(value),
             selected: selectedCategory == value,
-            showCheckmark: false,
-            avatar: selectedCategory == value ? Icon(Icons.check_rounded, size: 16, color: accent) : null,
             onSelected: (_) => setState(() => selectedCategory = value),
           )],
         ),
@@ -1736,56 +1745,37 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     ],
   ));
 
-  Widget _reviewReminderPage() => _card(Column(
+  Widget _reviewReminderPage() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text('언제 알려드릴까요?',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: ink)),
-      SizedBox(height: 14),
-      for (final option in [15, 60, 1440, -1]) Padding(
-        padding: EdgeInsets.only(bottom: 9),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(CueRadius.card),
-          onTap: () => setState(() => reminderMinutes = option),
-          child: Container(
-            padding: EdgeInsets.symmetric(horizontal: 15, vertical: 14),
-            decoration: BoxDecoration(
-              color: reminderMinutes == option ? mint : paper,
-              borderRadius: BorderRadius.circular(CueRadius.card),
-              border: Border.all(color: reminderMinutes == option ? accent : borderColor),
-            ),
-            child: Row(children: [
-              Icon(reminderMinutes == option ? Icons.radio_button_checked : Icons.radio_button_off,
-                  color: reminderMinutes == option ? accent : muted),
-              SizedBox(width: 11),
-              Text(_reminderLabel(option), style: TextStyle(color: ink, fontWeight: FontWeight.w700)),
+      _group([
+        for (final option in [15, 60, 1440, -1])
+          _row(_reminderLabel(option),
+              trailing: reminderMinutes == option ? Icon(Icons.check, size: 20, color: accent) : SizedBox(width: 20),
+              onTap: () => setState(() => reminderMinutes = option)),
+      ], label: '언제 알려드릴까요?'),
+      _group([
+        _row('신청 마감일·참가비',
+            value: [
+              if (deadlineController.text.trim().isNotEmpty) deadlineController.text.trim(),
+              if (feeController.text.trim().isNotEmpty) feeController.text.trim(),
+            ].join(' · ').ifEmpty('선택 사항'),
+            trailing: Icon(showUnknownInputs ? Icons.expand_less : Icons.expand_more, size: 20, color: muted),
+            onTap: () => setState(() => showUnknownInputs = !showUnknownInputs)),
+        if (showUnknownInputs)
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(children: [
+              TextField(controller: deadlineController, onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(labelText: '신청 마감일 (YYYY-MM-DD)'), keyboardType: TextInputType.datetime),
+              SizedBox(height: 9),
+              TextField(controller: feeController, onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(labelText: '참가비')),
             ]),
           ),
-        ),
-      ),
-      Divider(color: borderColor, height: 28),
-      InkWell(
-        borderRadius: BorderRadius.circular(CueRadius.control),
-        onTap: () => setState(() => showUnknownInputs = !showUnknownInputs),
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 8),
-          child: Row(children: [
-            Icon(Icons.tune_rounded, color: accent),
-            SizedBox(width: 10),
-            Expanded(child: Text('신청 마감일·참가비', style: TextStyle(color: ink, fontWeight: FontWeight.w700))),
-            Icon(showUnknownInputs ? Icons.expand_less : Icons.expand_more, color: muted),
-          ]),
-        ),
-      ),
-      if (showUnknownInputs) ...[
-        SizedBox(height: 12),
-        TextField(controller: deadlineController,
-            decoration: InputDecoration(labelText: '신청 마감일 (YYYY-MM-DD)'), keyboardType: TextInputType.datetime),
-        SizedBox(height: 9),
-        TextField(controller: feeController, decoration: InputDecoration(labelText: '참가비')),
-      ],
+      ], label: '추가 정보'),
     ],
-  ));
+  );
 
   void _setReviewStep(int value) => setState(() {
     reviewDirection = value > reviewStep ? 1 : -1;
@@ -2055,23 +2045,14 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           Expanded(
             child: _pageTitle('내 일정'),
           ),
-          SegmentedButton<bool>(
-            showSelectedIcon: false,
-            segments: [
-              ButtonSegment(value: true, icon: Icon(Icons.route_outlined), tooltip: '노선'),
-              ButtonSegment(value: false, icon: Icon(Icons.view_agenda_outlined), tooltip: '목록'),
-            ],
-            selected: {routeView},
-            onSelectionChanged: (value) => setState(() => routeView = value.first),
+          // 동선과 목록 보기를 아이콘 하나로 오간다. 아이콘은 바꿀 보기를 가리킨다.
+          IconButton(
+            tooltip: routeView ? '목록으로 보기' : '동선으로 보기',
+            onPressed: () => setState(() => routeView = !routeView),
+            icon: Icon(routeView ? Icons.view_agenda_outlined : Icons.route_outlined, color: ink),
           ),
         ],
       ),
-      if (saved.isNotEmpty)
-        TextButton(
-          onPressed: sharingEvent ? null : _manageShares,
-          style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
-          child: Text('행사 공유 관리 (실험)'),
-        ),
       SizedBox(height: 16),
       if (saved.isEmpty)
         _empty(Icons.event_note_outlined, '아직 저장한 행사가 없어요', '포스터나 공지문을 선택해 보세요.')
@@ -2090,6 +2071,13 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           _eventTile(event),
           SizedBox(height: 11),
         ],
+      // 공유는 실험 기능이라 일정 아래 묶음 목록으로 둔다.
+      if (saved.isNotEmpty) ...[
+        SizedBox(height: 12),
+        _group([
+          _row('행사 공유 관리', leading: '🤝', onTap: sharingEvent ? null : _manageShares),
+        ], label: '실험', footer: '저장한 행사를 다른 사용자에게 공개할 수 있어요.'),
+      ],
     ],
   );
 
@@ -2358,26 +2346,21 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _tag(event['category'] as String? ?? '기타'),
-          if (recommended) ...[
-            SizedBox(height: 8),
-            _tag(switch (event['originKind']) {
-              'shared' => '사용자가 공유한 행사 · 실험',
-              'web' => '웹에서 찾은 행사',
-              'demo' => '시연용 예시 행사',
-              _ => '등록된 행사',
-            }),
-          ],
-          SizedBox(height: 11),
           Text(
-            event['title'] as String? ?? '',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: ink,
-            ),
+            [
+              event['category'] as String? ?? '기타',
+              if (recommended) switch (event['originKind']) {
+                'shared' => '사용자 공유',
+                'web' => '웹에서 찾음',
+                'demo' => '시연용 예시',
+                _ => '등록된 행사',
+              },
+            ].join(' · '),
+            style: CueType.label.copyWith(color: muted),
           ),
-          SizedBox(height: 10),
+          SizedBox(height: 6),
+          Text(event['title'] as String? ?? '', style: CueType.title.copyWith(color: ink, fontSize: 19)),
+          SizedBox(height: 8),
           if (date != null) _detail(Icons.schedule, _date(date)),
           _detail(Icons.place_outlined, event['venue'] as String? ?? ''),
           if (recommended && event['reason'] is String) ...[
@@ -2435,14 +2418,15 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: () => _planRecommendation(event),
-                    icon: Icon(Icons.event_available_outlined),
+                    icon: Icon(Icons.add, size: 20),
                     label: Text('일정에 추가'),
+                    // 카드마다 있는 버튼이라 옅은 바탕으로 둔다. 진한 강조색은 화면의 주 버튼에만 쓴다.
                     style: FilledButton.styleFrom(
-                      backgroundColor: accent,
-                      foregroundColor: isDark ? Color(0xFF101214) : Colors.white,
+                      backgroundColor: isDark ? Color(0xFF17171C) : Colors.white,
+                      foregroundColor: accent,
                       minimumSize: Size.fromHeight(48),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CueRadius.control)),
-                      textStyle: TextStyle(fontWeight: FontWeight.w600),
+                      textStyle: TextStyle(fontFamily: 'Pretendard', fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
@@ -2759,14 +2743,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     child: child,
   );
   Widget _eyebrow(String value) => Text(value, style: CueType.label.copyWith(color: muted));
-  Widget _tag(String value) => Container(
-    padding: EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-    decoration: ShapeDecoration(
-      color: isDark ? Color(0xFF26292D) : Color(0xFFF0F2F4),
-      shape: StadiumBorder(),
-    ),
-    child: Text(value, style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w500)),
-  );
   // 설정 화면처럼 줄로 나눈 묶음 목록. 상자는 묶음 하나에만 쓰고 줄마다 나누지 않는다.
   Widget _group(List<Widget> rows, {String? label, String? footer}) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2818,7 +2794,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             ),
             if (value != null) ...[
               SizedBox(width: 12),
-              Flexible(
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 170),
                 child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.end, style: CueType.body.copyWith(color: muted)),
               ),

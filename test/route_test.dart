@@ -67,8 +67,8 @@ void main() {
         ),
       ),
     ));
-    expect(find.text('NEXT CUE · 2시간 후'), findsOneWidget);
-    expect(find.text('이어서 큐 4개가 더 있어요'), findsOneWidget);
+    expect(find.text('다음 일정 · 2시간 후'), findsOneWidget);
+    expect(find.text('이후 일정 4개'), findsOneWidget);
     expect(find.text('간격 10분 · 이동이 빠듯해요'), findsOneWidget);
     expect(find.text('같은 장소에서 바로 이어져요'), findsOneWidget);
     expect(find.textContaining('시간이 겹쳐요'), findsOneWidget);

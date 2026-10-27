@@ -164,6 +164,7 @@ class _Palette {
   Color get accent => dark ? const Color(0xFF55C7F3) : const Color(0xFF169ED3);
   Color get mint => dark ? const Color(0xFF25343A) : const Color(0xFFE8F7FD);
   Color get surface => dark ? const Color(0xFF232329) : const Color(0xFFF2F4F6);
+  Color get background => dark ? const Color(0xFF17171C) : Colors.white;
   Color get border => dark ? const Color(0xFF2F2F36) : const Color(0xFFE5E8EB);
   Color get cue => dark ? const Color(0xFF1F3540) : const Color(0xFF169ED3);
   Color get warn => dark ? const Color(0xFFFFB86B) : const Color(0xFFC96A12);
@@ -260,8 +261,8 @@ class _RouteViewState extends State<RouteView> {
   Widget _nextCueCard(_Palette palette, NextCue next, DateTime now) {
     final stop = next.stop;
     final label = next.inProgress
-        ? 'NOW · ${clock(stop.end)}까지'
-        : 'NEXT CUE · ${countdown(stop.start, now)}';
+        ? '지금 진행 중 · ${clock(stop.end)}까지'
+        : '다음 일정 · ${countdown(stop.start, now)}';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -279,7 +280,7 @@ class _RouteViewState extends State<RouteView> {
               style: const TextStyle(color: Colors.white, fontSize: 14)),
           if (next.remaining > 0) ...[
             const SizedBox(height: 12),
-            Text('이어서 큐 ${next.remaining}개가 더 있어요',
+            Text('이후 일정 ${next.remaining}개',
                 style: const TextStyle(color: Colors.white70, fontSize: 13)),
           ],
         ],
@@ -467,9 +468,9 @@ class _RouteViewState extends State<RouteView> {
                       runSpacing: 6,
                       children: [
                         if (branch != null) _chip(palette, '$branch길', palette.warn, palette.warnSoft),
-                        _chip(palette, stop.category, palette.accent, palette.mint),
+                        _chip(palette, stop.category, palette.muted, palette.background),
                         if (stop.flexible)
-                          _chip(palette, '방문 시간 조정 가능', palette.muted, palette.mint),
+                          _chip(palette, '방문 시간 조정 가능', palette.muted, palette.background),
                       ],
                     ),
                     if (expanded) ...[
