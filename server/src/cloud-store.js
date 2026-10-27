@@ -1,3 +1,4 @@
+import { eventOrigin } from './community.js';
 import { randomUUID } from 'node:crypto';
 import { exploreEnabled, interestSignals, memoryFromSignal, rankRecommendations } from './personalization.js';
 import { classifyEvent } from './classification.js';
@@ -23,6 +24,8 @@ const eventFromRow = (row, userEvent = {}) => ({
   description: row.description, createdAt: row.created_at,
   tags: row.tags || [], ...classifyEvent({ ...row, title: row.title, description: row.description, category: row.category, tags: row.tags, domains: row.domains, format: row.format }), applicationDeadline: row.application_deadline, participationFee: row.participation_fee,
   locationAddress: row.location_address, sourceUrl: row.source_url,
+  originKind: eventOrigin(row), sharingUserId: row.sharing_user_id,
+  community: { school: row.community_school || '', region: row.community_region || '', ageBand: row.community_age_band || '' },
   ...(userEvent.calendar_id != null ? { calendarId: userEvent.calendar_id } : {}),
   ...(userEvent.calendar_event_id != null ? { calendarEventId: userEvent.calendar_event_id } : {}),
   ...(userEvent.reminder_minutes != null ? { reminderMinutes: userEvent.reminder_minutes } : {}),
@@ -34,6 +37,7 @@ const eventRow = (event, userId, sourceType = 'scan') => ({
   application_deadline: event.applicationDeadline || null,
   location_name: event.venue, location_address: event.locationAddress || null,
   source_url: event.sourceUrl || null, source_type: sourceType,
+  origin_kind: (event.tags || []).includes('시연용') ? 'demo' : event.originKind === 'web' ? 'web' : 'catalog',
   created_at: event.createdAt || now(), updated_at: now(),
 });
 
@@ -152,7 +156,9 @@ export class CloudStore {
   async saved() {
     const links = await this.rows('user_events', { user_id: eq(this.userId), status: 'in.(saved,completed)', order: 'created_at.asc' });
     const events = await this.eventsByIds(links.map((link) => link.event_id));
-    return links.flatMap((link) => events.has(link.event_id) ? [eventFromRow(events.get(link.event_id), link)] : []);
+    const shares = await this.rows('events', { sharing_user_id: eq(this.userId), origin_kind: 'eq.shared' });
+    const sharedIds = new Set(shares.map((row) => row.share_source_event_id));
+    return links.flatMap((link) => events.has(link.event_id) ? [{ ...eventFromRow(events.get(link.event_id), link), shared: sharedIds.has(link.event_id) }] : []);
   }
   // 백그라운드 재계산이 끝난 뒤의 관심도를 읽도록 기다린다.
   async settled() { await recomputeQueues.get(this.userId); }
@@ -204,6 +210,7 @@ export class CloudStore {
   async removeSaved(_userId, eventId) {
     const link = await this.one('user_events', { user_id: eq(this.userId), event_id: eq(eventId), status: 'in.(saved,completed)' });
     if (!link || !(await this.one('events', { id: eq(eventId), owner_user_id: eq(this.userId) }))) return false;
+    await this.unshareEvent(this.userId, eventId);
     await this.patch('user_events', { user_id: eq(this.userId), event_id: eq(eventId) }, {
       status: 'unsaved', calendar_id: null, calendar_event_id: null, updated_at: now(),
     });
@@ -277,7 +284,8 @@ export class CloudStore {
     const excluded = new Set(links.filter((row) => ['saved', 'planned', 'completed', 'dismissed', 'unsaved'].includes(row.status))
       .map((row) => row.event_id));
     const catalog = catalogRows.map((row) => eventFromRow(row));
-    const results = rankRecommendations({ catalog, saved, interests, excluded, explore: exploreEnabled(), seed, seen });
+    const results = rankRecommendations({ catalog, saved, interests, excluded, explore: exploreEnabled(), seed, seen,
+      context: { school: profile.school, region: profile.region, ageBand: profile.age_band }, userId: this.userId });
     // 추천 기록 저장은 응답을 막지 않는다.
     this.insert('recommendations', results.map((event) => ({
       user_id: this.userId, event_id: event.id,
@@ -285,6 +293,16 @@ export class CloudStore {
     })), 'user_id,event_id').catch(() => {});
     return results;
   }
+  async shareRpc(name, eventId) {
+    const response = await fetch(`${this.url}/rest/v1/rpc/${name}`, {
+      method: 'POST', headers: { apikey: this.key, authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ source_id: eventId }), signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) throw Object.assign(new Error('행사 공유 정보를 저장하지 못했어요.'), { status: 502 });
+    return response.json();
+  }
+  async shareEvent(_userId, eventId) { return this.shareRpc('cue_share_event', eventId); }
+  async unshareEvent(_userId, eventId) { return this.shareRpc('cue_unshare_event', eventId); }
   async createGoal(_userId, eventId, title) {
     if (!(await this.eventVisible(this.userId, eventId))) return null;
     const existing = await this.one('goals', { user_id: eq(this.userId), related_event_id: eq(eventId), status: 'eq.active' });

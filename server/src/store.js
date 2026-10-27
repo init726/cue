@@ -1,3 +1,4 @@
+import { communityContext, eventOrigin } from './community.js';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -61,6 +62,13 @@ CREATE INDEX IF NOT EXISTS recommendations_user_idx ON recommendations(user_id,c
 for (const [column, type] of [['format', "TEXT NOT NULL DEFAULT '기타'"], ['domains', "TEXT NOT NULL DEFAULT '[]'"], ['participation_fee', 'TEXT']]) {
   if (!db.prepare('PRAGMA table_info(events)').all().some((row) => row.name === column)) db.exec(`ALTER TABLE events ADD COLUMN ${column} ${type}`);
 }
+for (const [column, type] of [['school', "TEXT NOT NULL DEFAULT ''"], ['region', "TEXT NOT NULL DEFAULT ''"], ['age_band', "TEXT NOT NULL DEFAULT ''"]]) {
+  if (!db.prepare('PRAGMA table_info(profiles)').all().some((row) => row.name === column)) db.exec(`ALTER TABLE profiles ADD COLUMN ${column} ${type}`);
+}
+for (const [column, type] of [['origin_kind', "TEXT NOT NULL DEFAULT 'legacy'"], ['sharing_user_id', 'TEXT REFERENCES users(id) ON DELETE CASCADE'], ['share_source_event_id', 'TEXT REFERENCES events(id) ON DELETE CASCADE'], ['community_school', "TEXT NOT NULL DEFAULT ''"], ['community_region', "TEXT NOT NULL DEFAULT ''"], ['community_age_band', "TEXT NOT NULL DEFAULT ''"]]) {
+  if (!db.prepare('PRAGMA table_info(events)').all().some((row) => row.name === column)) db.exec(`ALTER TABLE events ADD COLUMN ${column} ${type}`);
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS event_share_owner_idx ON events(sharing_user_id,share_source_event_id)');
 const now = () => new Date().toISOString();
 const bool = (value) => value === 1;
 const asEvent = (row) => ({
@@ -69,6 +77,8 @@ const asEvent = (row) => ({
   description: row.description, createdAt: row.created_at,
   tags: JSON.parse(row.tags || '[]'), ...classifyEvent({ ...row, tags: JSON.parse(row.tags || '[]'), domains: JSON.parse(row.domains || '[]') }), applicationDeadline: row.application_deadline, participationFee: row.participation_fee,
   locationAddress: row.location_address, sourceUrl: row.source_url,
+  originKind: eventOrigin(row), sharingUserId: row.sharing_user_id,
+  community: { school: row.community_school || '', region: row.community_region || '', ageBand: row.community_age_band || '' },
   ...(row.calendar_id != null ? { calendarId: row.calendar_id } : {}),
   ...(row.calendar_event_id != null ? { calendarEventId: row.calendar_event_id } : {}),
   ...(row.reminder_minutes != null ? { reminderMinutes: row.reminder_minutes } : {}),
@@ -77,10 +87,11 @@ const asEvent = (row) => ({
 function insertEvent(event, ownerId, sourceType) {
   const timestamp = event.createdAt || now();
   db.prepare(`INSERT INTO events(id,owner_user_id,title,description,category,tags,start_at,end_at,application_deadline,location_name,
-    location_address,source_url,source_type,created_at,updated_at,format,domains,participation_fee) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    location_address,source_url,source_type,created_at,updated_at,format,domains,participation_fee,origin_kind) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(event.id, ownerId, event.title, event.description || '', event.category,
       JSON.stringify(event.tags || []), event.startsAt, event.endsAt, event.applicationDeadline || null,
-      event.venue, event.locationAddress || null, event.sourceUrl || null, sourceType, timestamp, timestamp, event.format || '기타', JSON.stringify(event.domains || []), event.participationFee || null);
+      event.venue, event.locationAddress || null, event.sourceUrl || null, sourceType, timestamp, timestamp, event.format || '기타', JSON.stringify(event.domains || []), event.participationFee || null,
+      (event.tags || []).includes('시연용') ? 'demo' : event.originKind === 'web' ? 'web' : 'catalog');
   db.prepare(`INSERT INTO event_sessions(id,event_id,start_at,end_at,location_name) VALUES(?,?,?,?,?)`)
     .run(randomUUID(), event.id, event.startsAt, event.endsAt, event.venue);
 }
@@ -150,7 +161,7 @@ export const store = {
   },
   profile(userId) {
     const row = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId);
-    return row && { userId: row.user_id, onboardingCompleted: bool(row.onboarding_completed),
+    return row && { school: row.school, region: row.region, ageBand: row.age_band, userId: row.user_id, onboardingCompleted: bool(row.onboarding_completed),
       personalizationEnabled: bool(row.personalization_enabled), recommendationEnabled: bool(row.recommendation_enabled),
       locale: row.locale, timezone: row.timezone, createdAt: row.created_at, updatedAt: row.updated_at };
   },
@@ -167,10 +178,32 @@ export const store = {
     if (!personalization) db.prepare('DELETE FROM interest_profiles WHERE user_id=?').run(userId);
     if (!personalization) db.prepare('DELETE FROM agent_memories WHERE user_id=?').run(userId);
     if (personalization && !old.personalizationEnabled) this.recomputeInterests(userId);
+    if (['school', 'region', 'ageBand'].some((key) => Object.hasOwn(changes, key))) {
+      const context = communityContext({ ...old, ...changes });
+      db.prepare('UPDATE profiles SET school=?,region=?,age_band=? WHERE user_id=?').run(context.school, context.region, context.ageBand, userId);
+      db.prepare('UPDATE events SET community_school=?,community_region=?,community_age_band=? WHERE sharing_user_id=?').run(context.school,context.region,context.ageBand,userId);
+    }
     return this.profile(userId);
   },
+  shareEvent(userId, eventId) {
+    const source = db.prepare("SELECT e.* FROM events e JOIN user_events ue ON ue.event_id=e.id WHERE e.id=? AND e.owner_user_id=? AND ue.user_id=? AND ue.status IN ('saved','completed')").get(eventId,userId,userId);
+    if (!source) return null;
+    return transact(() => {
+      const existing = db.prepare('SELECT id FROM events WHERE sharing_user_id=? AND share_source_event_id=?').get(userId,eventId);
+      const id = existing?.id || randomUUID();
+      if (existing) return { id };
+      insertEvent({ ...asEvent(source), id, locationAddress: null }, null, 'catalog');
+      const context = this.profile(userId);
+      db.prepare("UPDATE events SET origin_kind='shared',sharing_user_id=?,share_source_event_id=?,community_school=?,community_region=?,community_age_band=? WHERE id=?").run(userId,eventId,context.school,context.region,context.ageBand,id);
+      return { id };
+    });
+  },
+  unshareEvent(userId, eventId) {
+    db.prepare('DELETE FROM events WHERE sharing_user_id=? AND share_source_event_id=?').run(userId,eventId);
+    return true;
+  },
   saved(userId) { return db.prepare(`SELECT e.*,ue.calendar_id,ue.calendar_event_id,ue.reminder_minutes FROM user_events ue
-    JOIN events e ON e.id=ue.event_id WHERE ue.user_id=? AND ue.status IN ('saved','completed') ORDER BY ue.created_at`).all(userId).map(asEvent); },
+    JOIN events e ON e.id=ue.event_id WHERE ue.user_id=? AND ue.status IN ('saved','completed') ORDER BY ue.created_at`).all(userId).map((row) => ({ ...asEvent(row), shared: !!db.prepare('SELECT 1 FROM events WHERE sharing_user_id=? AND share_source_event_id=?').get(userId,row.id) })); },
   catalog() { return db.prepare("SELECT * FROM events WHERE source_type='catalog' ORDER BY start_at").all().map(asEvent); },
   importCatalog(events) { transact(() => { for (const event of events) insertEvent(event, null, 'catalog'); }); },
   save(userId, event) {
@@ -207,6 +240,7 @@ export const store = {
     transact(() => {
       db.prepare("UPDATE user_events SET status='unsaved',calendar_id=NULL,calendar_event_id=NULL,updated_at=? WHERE user_id=? AND event_id=?")
         .run(now(),userId,eventId);
+      this.unshareEvent(userId, eventId);
       this.interact(userId,eventId,'unsaved');
     });
     return true;
@@ -275,7 +309,7 @@ export const store = {
       this.recomputeInterests(userId);
     const interests = new Map(this.interests(userId).map((item) => [item.interestKey,item.score]));
     const excluded = new Set(db.prepare("SELECT event_id FROM user_events WHERE user_id=? AND status IN ('saved','planned','completed','dismissed','unsaved')").all(userId).map((item) => item.event_id));
-    const results = rankRecommendations({ catalog: this.catalog(), saved: this.saved(userId), interests, excluded, explore: exploreEnabled(), seed, seen });
+    const results = rankRecommendations({ catalog: this.catalog(), saved: this.saved(userId), interests, excluded, explore: exploreEnabled(), seed, seen, context: profile, userId });
     for (const event of results) {
       db.prepare(`INSERT INTO recommendations(id,user_id,event_id,recommendation_score,reason,created_at) VALUES(?,?,?,?,?,?)
         ON CONFLICT(user_id,event_id) DO UPDATE SET recommendation_score=excluded.recommendation_score,reason=excluded.reason`)
