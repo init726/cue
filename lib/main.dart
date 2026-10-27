@@ -205,6 +205,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   bool routeView = true;
   DateTime? routeFocusDate;
   bool showDeveloperInfo = false;
+  String? settingsSection;
   int routeFocusRequest = 0;
   String? statusMessage;
   String? apiError;
@@ -1197,7 +1198,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                 child: switch (tab) {
                   1 => _scroll(_saved(), onRefresh: _refresh),
                   2 => _scroll(_discover(), onRefresh: () => _refresh(shuffle: true)),
-                  3 => _scroll(_settings()),
+                  3 => KeyedSubtree(key: ValueKey(settingsSection), child: _scroll(_settings())),
                   _ => _scroll(_home()),
                 },
               ),
@@ -2157,63 +2158,73 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     ],
   );
 
-  Widget _settings() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _pageTitle('설정', '캘린더와 추천 설정'),
-      SizedBox(height: 20),
-      _card(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _eyebrow('화면 테마'),
-            SizedBox(height: 14),
-            SegmentedButton<ThemeMode>(
-              segments: [
-                ButtonSegment(value: ThemeMode.system, label: Text('시스템')),
-                ButtonSegment(value: ThemeMode.light, label: Text('라이트')),
-                ButtonSegment(value: ThemeMode.dark, label: Text('다크')),
-              ],
-              selected: {cueThemeMode.value},
-              onSelectionChanged: (value) async {
-                cueThemeMode.value = value.first;
-                await (await SharedPreferences.getInstance()).setString(
-                  'theme_mode',
-                  value.first.name,
-                );
-              },
+  Widget _settings() {
+    final section = settingsSection;
+    if (section != null) {
+      return PopScope<Object?>(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) setState(() => settingsSection = null);
+        },
+        child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => settingsSection = null),
+              icon: Icon(Icons.arrow_back),
+              label: Text('설정으로'),
             ),
-          ],
+          ),
+          _pageTitle(section, switch (section) {
+            '캘린더와 알림' => '새 일정을 저장할 때 적용할 기본값',
+            '화면 테마' => '편안하게 볼 수 있는 화면',
+            '추천' => '관심사 기록과 행사 추천 관리',
+            _ => '데이터 처리와 익명 계정 안내',
+          }),
+          SizedBox(height: 20),
+          ..._settingsContent(section),
+        ],
         ),
-      ),
-      SizedBox(height: 14),
-      _card(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _eyebrow('개인화와 추천'),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text('관심사 기반 추천'),
-              subtitle: Text('끄면 추천을 위한 선택 기록을 사용하지 않아요.'),
-              value: personalizationEnabled,
-              onChanged: (value) =>
-                  _updateProfile({'personalizationEnabled': value}),
-            ),
-            Divider(color: borderColor),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text('행사 추천 표시'),
-              subtitle: Text('추천 행사 화면에 표시할지 정해요.'),
-              value: recommendationEnabled,
-              onChanged: personalizationEnabled
-                  ? (value) => _updateProfile({'recommendationEnabled': value})
-                  : null,
-            ),
-          ],
-        ),
-      ),
-      SizedBox(height: 14),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _pageTitle('설정', 'Cue를 내게 맞게'),
+        SizedBox(height: 20),
+        _card(Column(children: [
+          _settingsEntry(Icons.calendar_month_outlined, '캘린더와 알림',
+              '$preferredCalendarName · ${_reminderLabel(defaultReminderMinutes)}'),
+          Divider(color: borderColor, height: 1),
+          _settingsEntry(Icons.palette_outlined, '화면 테마',
+              switch (cueThemeMode.value) {
+                ThemeMode.system => '시스템 설정 따르기',
+                ThemeMode.light => '라이트',
+                ThemeMode.dark => '다크',
+              }),
+          Divider(color: borderColor, height: 1),
+          _settingsEntry(Icons.auto_awesome_outlined, '추천',
+              personalizationEnabled && recommendationEnabled ? '관심사 기반 추천 사용 중' : '추천 꺼짐'),
+          Divider(color: borderColor, height: 1),
+          _settingsEntry(Icons.shield_outlined, '내 데이터', '사진 처리 안내 · 계정과 기록'),
+        ])),
+      ],
+    );
+  }
+
+  Widget _settingsEntry(IconData icon, String title, String summary) => ListTile(
+    contentPadding: EdgeInsets.zero,
+    leading: Icon(icon, color: accent),
+    title: Text(title),
+    subtitle: Text(summary, maxLines: 2, overflow: TextOverflow.ellipsis),
+    trailing: Icon(Icons.chevron_right, color: muted),
+    onTap: () => setState(() => settingsSection = title),
+  );
+
+  List<Widget> _settingsContent(String section) => switch (section) {
+    '캘린더와 알림' => [
       _card(
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2289,35 +2300,62 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         ),
       ),
       SizedBox(height: 14),
+    ],
+    '화면 테마' => [
       _card(
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '사진과 일정 데이터',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: ink,
-              ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              '사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송돼요. 행사 안내물이 아니면 더 분석하지 않아요.',
-              style: TextStyle(color: muted, height: 1.5),
+            _eyebrow('화면 테마'),
+            SizedBox(height: 14),
+            SegmentedButton<ThemeMode>(
+              segments: [
+                ButtonSegment(value: ThemeMode.system, label: Text('시스템')),
+                ButtonSegment(value: ThemeMode.light, label: Text('라이트')),
+                ButtonSegment(value: ThemeMode.dark, label: Text('다크')),
+              ],
+              selected: {cueThemeMode.value},
+              onSelectionChanged: (value) async {
+                cueThemeMode.value = value.first;
+                await (await SharedPreferences.getInstance()).setString(
+                  'theme_mode',
+                  value.first.name,
+                );
+              },
             ),
           ],
         ),
       ),
-      SizedBox(height: 12),
-      Center(
-        child: TextButton.icon(
-          onPressed: _refresh,
-          icon: Icon(Icons.refresh),
-          label: Text('일정 및 추천 새로고침'),
+      SizedBox(height: 14),
+    ],
+    '추천' => [
+      _card(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _eyebrow('개인화와 추천'),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: Text('관심사 기반 추천'),
+              subtitle: Text('끄면 추천을 위한 선택 기록을 사용하지 않아요.'),
+              value: personalizationEnabled,
+              onChanged: (value) =>
+                  _updateProfile({'personalizationEnabled': value}),
+            ),
+            Divider(color: borderColor),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: Text('행사 추천 표시'),
+              subtitle: Text('추천 행사 화면에 표시할지 정해요.'),
+              value: recommendationEnabled,
+              onChanged: personalizationEnabled
+                  ? (value) => _updateProfile({'recommendationEnabled': value})
+                  : null,
+            ),
+          ],
         ),
       ),
-      SizedBox(height: 18),
+      SizedBox(height: 14),
       _card(
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2339,6 +2377,29 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                 minimumSize: Size.fromHeight(50),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
               ),
+            ),
+          ],
+        ),
+      ),
+      SizedBox(height: 14),
+    ],
+    '내 데이터' => [
+      _card(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '사진과 일정 데이터',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: ink,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              '사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송돼요. 행사 안내물이 아니면 더 분석하지 않아요.',
+              style: TextStyle(color: muted, height: 1.5),
             ),
           ],
         ),
@@ -2385,8 +2446,11 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ],
         ),
       ),
+      SizedBox(height: 14),
+      TextButton.icon(onPressed: _refresh, icon: Icon(Icons.refresh), label: Text('연결 다시 확인')),
     ],
-  );
+    _ => const <Widget>[],
+  };
 
   Future<void> _resetInterests() async {
     final confirmed = await showDialog<bool>(
