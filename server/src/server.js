@@ -9,6 +9,7 @@ import { discoverCatalogEvents, discoveryTopics } from './discovery.js';
 import { formats, domains } from './classification.js';
 import { demoEvents, demoEventCount, isDemoEvent } from './demo-catalog.js';
 import { exploreEnabled } from './personalization.js';
+import { communityContext } from './community.js';
 
 const port = Number(process.env.PORT || 8787);
 const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
@@ -46,7 +47,8 @@ async function discoverFor(data, userId) {
     const catalog = await data.rows('events', { source_type: 'eq.catalog' });
     const existing = new Set(catalog.filter((event) => Date.parse(event.end_at) > Date.now())
       .map((event) => event.source_url).filter(Boolean));
-    await importCloudCatalog(candidates.filter((event) => !existing.has(event.sourceUrl)));
+    await importCloudCatalog(candidates.filter((event) => !existing.has(event.sourceUrl))
+      .map((event) => ({ ...event, originKind: 'web' })));
     job.retryAfter = 12 * 60 * 60 * 1000;
   })();
   job.promise = promise.finally(() => { job.done = true; });
@@ -143,6 +145,7 @@ async function cloudProfile(user, changes) {
   const row = rows[0];
   return {
     userId: row.user_id, onboardingCompleted: row.onboarding_completed,
+    school: row.school || '', region: row.region || '', ageBand: row.age_band || '',
     personalizationEnabled: row.personalization_enabled,
     recommendationEnabled: row.recommendation_enabled,
     locale: row.locale, timezone: row.timezone,
@@ -286,6 +289,10 @@ export const server = http.createServer(async (req, res) => {
         timezone: typeof body.timezone === 'string' && body.timezone.length <= 64 ? body.timezone : previous.timezone,
         updated_at: new Date().toISOString(),
       };
+      const context = communityContext({ ...previous, ...body });
+      changes.school = context.school;
+      changes.region = context.region;
+      changes.age_band = context.ageBand;
       const profile = await cloudProfile(user, changes);
       await data.onProfileChanged(previous, profile);
       store.updateProfile(user.id, profile);
@@ -312,7 +319,8 @@ export const server = http.createServer(async (req, res) => {
         backgroundDiscoveryAt.set(user.id, Date.now());
         discoverFor(data, user.id).catch(() => {});
       }
-      if (demo) return send(res, 200, { events });
+      const publicEvents = (items) => items.map(({ sharingUserId, community, ...event }) => event);
+      if (demo) return send(res, 200, { events: publicEvents(events) });
       if (!events.length && user.supabase) {
         try {
           await discoverFor(data, user.id);
@@ -321,7 +329,7 @@ export const server = http.createServer(async (req, res) => {
           console.error('Event discovery:', error instanceof Error ? error.message : error);
         }
       }
-      return send(res, 200, { events });
+      return send(res, 200, { events: publicEvents(events) });
     }
     if (req.method === 'DELETE' && route === '/v1/interests') {
       await data.resetInterests(user.id);
@@ -394,6 +402,19 @@ export const server = http.createServer(async (req, res) => {
       const event = validateSavedEvent(body);
       await data.save(user.id,event);
       return send(res, 201, { event });
+    }
+    const shareRoute = /^\/v1\/events\/([0-9a-f-]{36})\/share$/.exec(route);
+    if (shareRoute && ['POST', 'DELETE'].includes(req.method)) {
+      if (req.method === 'POST') {
+        const body = await readJson(req, 4096);
+        if (body.confirmPublic !== true) return send(res, 400, { error: '행사 정보 공개에 동의해 주세요.' });
+        if (!allowed(`share:${user.id}`, 30, 60 * 60 * 1000)) return send(res, 429, { error: '공유 요청이 너무 많아요.' });
+        const shared = await data.shareEvent(user.id, shareRoute[1]);
+        if (!shared) return send(res, 404, { error: '내가 저장한 행사를 찾을 수 없어요.' });
+        return send(res, 201, { shared });
+      }
+      await data.unshareEvent(user.id, shareRoute[1]);
+      return send(res, 200, { shared: false });
     }
     const eventRoute = /^\/v1\/events\/([0-9a-f-]{36})$/.exec(route);
     if (eventRoute && ['PATCH', 'DELETE'].includes(req.method)) {
