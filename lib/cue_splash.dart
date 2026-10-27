@@ -6,9 +6,9 @@ class CueSplash extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final blue = dark ? const Color(0xFF76C9FF) : const Color(0xFF208ED4);
-    final background = dark ? const Color(0xFF0B1928) : const Color(0xFFF4FAFF);
-    final text = dark ? const Color(0xFFEAF7FF) : const Color(0xFF17344E);
+    final blue = dark ? const Color(0xFF55C7F3) : const Color(0xFF169ED3);
+    final background = dark ? const Color(0xFF101214) : const Color(0xFFF7F8FA);
+    final text = dark ? const Color(0xFFF4F5F6) : const Color(0xFF181A1D);
     return Scaffold(
       backgroundColor: background,
       body: SafeArea(
@@ -23,7 +23,7 @@ class CueSplash extends StatelessWidget {
                 child: Container(
                   width: 208, height: 208,
                   decoration: BoxDecoration(
-                    color: dark ? const Color(0xFF15334B) : const Color(0xFFE2F3FF),
+                    color: dark ? const Color(0xFF1A1D20) : const Color(0xFFE8F7FD),
                     borderRadius: BorderRadius.circular(54),
                   ),
                   child: CustomPaint(painter: _CameraPainter(blue)),
@@ -37,11 +37,11 @@ class CueSplash extends StatelessWidget {
             const SizedBox(height: 28),
             SizedBox(width: 90, child: LinearProgressIndicator(
               minHeight: 3, borderRadius: BorderRadius.circular(8),
-              backgroundColor: dark ? const Color(0xFF24445E) : const Color(0xFFD1E9F8),
+              backgroundColor: dark ? const Color(0xFF303438) : const Color(0xFFD9EFF8),
               color: blue,
             )),
             const SizedBox(height: 12),
-            Text('Cue를 여는 중', style: TextStyle(fontSize: 12, color: dark ? const Color(0xFFA8C6D9) : const Color(0xFF6685A0))),
+            Text('Cue를 여는 중', style: TextStyle(fontSize: 12, color: dark ? const Color(0xFFA9AFB5) : const Color(0xFF697078))),
           ]),
         ),
       ),
