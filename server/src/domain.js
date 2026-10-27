@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { categories } from './categories.js';
-import { classifyEvent } from './classification.js';
+import { classifyEvent, titleCategory } from './classification.js';
 
 export { categories } from './categories.js';
 const hasTimezone = (value) => /^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|[+-]\d\d:\d\d)$/.test(value);
@@ -33,7 +33,8 @@ function mergeContiguousSessions(items) {
 export function cleanExtraction(raw) {
   if (!raw || raw.is_event !== true) return null;
   const title = String(raw.title || '').trim().slice(0, 120);
-  const category = categories.includes(raw.category) ? raw.category : '기타';
+  // AI가 붙인 종류는 제목의 구체적인 핵심어로 바로잡는다. 예: 커피 페스티벌은 부대 공연이 있어도 커피·와인.
+  const category = titleCategory(title) || (categories.includes(raw.category) ? raw.category : '기타');
   const tags = (Array.isArray(raw.tags) ? raw.tags : []).filter((tag) => typeof tag === 'string')
     .map((tag) => tag.trim().slice(0, 40)).filter(Boolean).slice(0, 8);
   const rawSessions = (Array.isArray(raw.sessions) ? raw.sessions : [])

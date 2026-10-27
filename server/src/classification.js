@@ -31,11 +31,16 @@ const formatClues = {
   공모전: /공모전|경진대회/, 체험: /체험|워크숍/,
 };
 
+// 제목의 구체적인 핵심어로 고른 종류. AI가 붙인 종류를 바로잡을 때만 쓰고, 사용자가 고른 종류는 덮어쓰지 않는다.
+export function titleCategory(title) {
+  return titleCategories.find(([pattern]) => pattern.test(String(title || '')))?.[1] || null;
+}
+
 export function classifyEvent(event) {
   const title = String(event.title || '');
   const text = [title, event.description, ...(event.tags || [])].join(' ');
-  const strong = titleCategories.find(([pattern]) => pattern.test(title));
-  const titleDomains = strong?.[2] || domains.filter((domain) => domain !== '기타' && clues[domain]?.test(title));
+  // '공연'·'예술' 같은 일반 단어는 공식 출처나 AI가 정한 분야를 덮어쓰지 않는다. 구체적인 핵심어만 우선한다.
+  const titleDomains = titleCategories.find(([pattern]) => pattern.test(title))?.[2] || [];
   const inferred = domains.filter((domain) => domain !== '기타' && clues[domain]?.test(text));
   // Legacy categories may describe the event's form, so use them only if content gives no clue.
   if (!inferred.length && ['교육', '음악', '미술', '디자인'].includes(event.category)) inferred.push(event.category);
@@ -46,7 +51,7 @@ export function classifyEvent(event) {
   const selectedDomains = [...new Set(titleDomains.length ? titleDomains : (explicit.length ? explicit : inferred))];
   const inferredFormat = formats.find((format) => format !== '기타' && formatClues[format]?.test(text)) ||
     (formats.includes(event.category) ? event.category : '기타');
-  return { category: strong?.[1] || (event.category || '기타'),
+  return {
     format: formats.includes(event.format) && event.format !== '기타' ? event.format : inferredFormat,
     domains: selectedDomains.length ? selectedDomains : ['기타'] };
 }

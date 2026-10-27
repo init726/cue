@@ -304,6 +304,21 @@ export class CloudStore {
   async goals() { return this.rows('goals', { user_id: eq(this.userId), order: 'created_at.desc' }); }
 }
 
+// Supabase 무료 프로젝트는 한동안 쓰이지 않으면 일시 정지된다. 주기적으로 가벼운 조회를 해 깨어 있게 하고 상태를 알린다.
+export async function pingCloud() {
+  const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return 'not_configured';
+  try {
+    const response = await fetch(`${url}/rest/v1/events?select=id&limit=1`, {
+      headers: { apikey: key, authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15000),
+    });
+    return response.ok ? 'ok' : 'error';
+  } catch {
+    return 'error';
+  }
+}
+
 export async function importCloudCatalog(events) {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
