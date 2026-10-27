@@ -1,4 +1,5 @@
 import { classifyEvent } from './classification.js';
+import { communityMatch } from './community.js';
 
 export const personalizationRules = Object.freeze({
   decayDays: 90,
@@ -62,18 +63,19 @@ function seededRandom(seed, id) {
 const varietyJitter = 0.4;
 const seenPenalty = 0.4;
 
-export function rankRecommendations({ catalog, saved, interests, excluded, currentTime = Date.now(), explore = false, seed = null, seen = new Set() }) {
+export function rankRecommendations({ catalog, saved, interests, excluded, currentTime = Date.now(), explore = false, seed = null, seen = new Set(), context = {}, userId = null }) {
   // Old profile keys can still be read until the store recomputes them.
   const positiveDomains = [...interests.entries()].filter(([key, score]) => key.startsWith('domain:') && score > 0);
   const specificInterests = positiveDomains.filter(([key]) => !['domain:문화', 'domain:기타'].includes(key));
   const ranked = catalog
-    .filter((event) => Date.parse(event.endsAt) > currentTime &&
+    .filter((event) => (!userId || event.sharingUserId !== userId) && Date.parse(event.endsAt) > currentTime &&
       (!event.applicationDeadline || Date.parse(event.applicationDeadline) > currentTime) &&
       !excluded.has(event.id) && !saved.some((own) => own.title === event.title) &&
       !saved.some((own) => Date.parse(own.startsAt) < Date.parse(event.endsAt) &&
         Date.parse(event.startsAt) < Date.parse(own.endsAt)))
     .map((event) => {
       const classification = classifyEvent(event);
+      const community = event.originKind === 'shared' ? communityMatch(event, context) : { score: 0, reason: '' };
       const matchedDomains = classification.domains.filter((domain) => (interests.get(`domain:${domain}`) || 0) > 0 && domain !== '기타');
       const domainScore = matchedDomains.reduce((sum, domain) => sum + interests.get(`domain:${domain}`), 0);
       const relatedScore = [...interests.entries()].filter(([key, value]) => key.startsWith('domain:') && value > 0 &&
@@ -84,9 +86,9 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
       const eligible = positiveDomains.length > 0 && (matchedDomains.length > 0 || relatedScore > 0) &&
         (!specificInterests.length || matchedDomains.some((domain) => domain !== '문화') || relatedScore > 0);
       const formatScore = Math.max(0, interests.get(`format:${classification.format}`) || 0);
-      const score = eligible ? domainScore * 4 + relatedScore * 0.6 + tagScore * 1.5 + formatScore * 0.2 : 0;
-      const reason = matchedDomains.length ? `${matchedDomains.slice(0, 2).join('·')} 주제에 보인 관심을 바탕으로 추천해요.` :
-        relatedScore > 0 ? '관심 주제와 가까운 분야의 행사예요.' : '';
+      const score = (eligible ? domainScore * 4 + relatedScore * 0.6 + tagScore * 1.5 + formatScore * 0.2 : 0) + community.score;
+      const reason = community.reason || (matchedDomains.length ? `${matchedDomains.slice(0, 2).join('·')} 주제에 보인 관심을 바탕으로 추천해요.` :
+        relatedScore > 0 ? '관심 주제와 가까운 분야의 행사예요.' : '');
       return { ...event, ...classification, score, reason };
     })
     .sort((a, b) => b.score - a.score || Date.parse(a.startsAt) - Date.parse(b.startsAt));

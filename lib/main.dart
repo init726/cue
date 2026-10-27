@@ -206,6 +206,11 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   DateTime? routeFocusDate;
   bool showDeveloperInfo = false;
   String? settingsSection;
+  String communitySchool = '';
+  String communityRegion = '';
+  String communityAgeBand = '';
+  String recommendationSource = 'all';
+  bool sharingEvent = false;
   int routeFocusRequest = 0;
   String? statusMessage;
   String? apiError;
@@ -338,6 +343,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() {
         final profile = me['profile'] as Map<String, dynamic>? ?? {};
+        communitySchool = profile['school'] as String? ?? '';
+        communityRegion = profile['region'] as String? ?? '';
+        communityAgeBand = profile['ageBand'] as String? ?? '';
         userId = me['userId'] as String?;
         cloudConnected = me['cloudConnected'] as bool? ?? false;
         onboardingCompleted = onboardingCompleted ||
@@ -2108,6 +2116,15 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         ],
       ),
       SizedBox(height: 22),
+      if (saved.isNotEmpty)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: sharingEvent ? null : _manageShares,
+            icon: Icon(Icons.people_outline),
+            label: Text('행사 공유 관리 (실험)'),
+          ),
+        ),
       if (saved.isEmpty)
         _empty(Icons.event_note_outlined, '아직 저장한 행사가 없어요', '포스터나 공지문을 선택해 보세요.')
       else if (routeView)
@@ -2133,6 +2150,22 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     children: [
       _pageTitle('추천 행사', '관심 분야와 가까운 행사'),
       SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        children: [
+          for (final source in (const {'all': '전체', 'web': '웹에서 찾은 행사', 'shared': '사용자 공유'}).entries)
+            ChoiceChip(
+              label: Text(source.value),
+              selected: recommendationSource == source.key,
+              onSelected: (_) => setState(() => recommendationSource = source.key),
+            ),
+        ],
+      ),
+      TextButton.icon(
+        onPressed: _editCommunity,
+        icon: Icon(Icons.tune),
+        label: Text('학교·활동 지역으로 추천받기'),
+      ),
       Align(
         alignment: Alignment.centerLeft,
         child: TextButton.icon(
@@ -2152,9 +2185,14 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           '행사 포스터를 저장하면 관심 분야에 맞는 행사를 찾아드려요. 아래로 당겨서 새로고침할 수도 있어요.',
         ),
       for (final event in recommended) ...[
-        _eventTile(event, recommended: true),
-        SizedBox(height: 11),
+        if (recommendationSource == 'all' || event['originKind'] == recommendationSource) ...[
+          _eventTile(event, recommended: true),
+          SizedBox(height: 11),
+        ],
       ],
+      if (recommended.isNotEmpty && recommendationSource != 'all' &&
+          !recommended.any((event) => event['originKind'] == recommendationSource))
+        _empty(Icons.event_note_outlined, '이 출처의 추천이 아직 없어요', '다른 출처를 선택하거나 나중에 다시 확인해 주세요.'),
     ],
   );
 
@@ -2329,6 +2367,19 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       SizedBox(height: 14),
     ],
     '추천' => [
+      _card(ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(Icons.people_outline, color: accent),
+        title: Text('내 추천 환경 (실험)'),
+        subtitle: Text([communitySchool, communityRegion, _ageBandLabel(communityAgeBand)]
+            .where((value) => value.isNotEmpty).join(' · ').isEmpty
+                ? '학교·활동 지역·연령대 선택'
+                : [communitySchool, communityRegion, _ageBandLabel(communityAgeBand)]
+                    .where((value) => value.isNotEmpty).join(' · ')),
+        trailing: Icon(Icons.chevron_right, color: muted),
+        onTap: _editCommunity,
+      )),
+      SizedBox(height: 14),
       _card(
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2503,6 +2554,15 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _tag(event['category'] as String? ?? '기타'),
+          if (recommended) ...[
+            SizedBox(height: 8),
+            _tag(switch (event['originKind']) {
+              'shared' => '사용자가 공유한 행사 · 실험',
+              'web' => '웹에서 찾은 행사',
+              'demo' => '시연용 예시 행사',
+              _ => '등록된 행사',
+            }),
+          ],
           SizedBox(height: 11),
           Text(
             event['title'] as String? ?? '',
@@ -2622,6 +2682,119 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  String _ageBandLabel(String value) => switch (value) {
+    'under20' => '20세 미만', '20s' => '20대', '30s' => '30대', '40plus' => '40세 이상', _ => '',
+  };
+
+  Future<void> _editCommunity() async {
+    var school = communitySchool;
+    var region = communityRegion;
+    var ageBand = communityAgeBand;
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(builder: (context, update) => AlertDialog(
+        title: Text('내 추천 환경'),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('모두 선택사항이에요. 같은 학교·지역·연령대에서 공유된 행사를 추천하는 데 사용해요. 학교나 연령은 인증되지 않으며 참가 자격을 보장하지 않아요.'),
+          SizedBox(height: 16),
+          TextFormField(initialValue: school, maxLength: 80,
+            decoration: InputDecoration(labelText: '학교·캠퍼스', hintText: '예: 한국대학교 서울캠퍼스'),
+            onChanged: (value) => school = value.trim()),
+          TextFormField(initialValue: region, maxLength: 80,
+            decoration: InputDecoration(labelText: '활동 지역', hintText: '예: 서울 성북구'),
+            onChanged: (value) => region = value.trim()),
+          DropdownButtonFormField<String>(
+            initialValue: ageBand,
+            decoration: InputDecoration(labelText: '연령대'),
+            items: ['', 'under20', '20s', '30s', '40plus'].map((value) => DropdownMenuItem(
+              value: value, child: Text(value.isEmpty ? '선택 안 함' : _ageBandLabel(value)))).toList(),
+            onChanged: (value) => update(() => ageBand = value ?? ''),
+          ),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('취소')),
+          FilledButton(onPressed: () => Navigator.pop(context, <String, dynamic>{
+            'school': school, 'region': region, 'ageBand': ageBand,
+          }), child: Text('저장')),
+        ],
+      )),
+    );
+    if (result != null && mounted) await _updateProfile(result);
+  }
+
+  Future<void> _manageShares() async {
+    final event = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.65,
+        child: Column(children: [
+          Padding(padding: EdgeInsets.all(20), child: Text('내가 발견한 행사 공유',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
+          Expanded(child: ListView(children: [
+            for (final event in saved)
+              ListTile(
+                title: Text(event['title'] as String? ?? ''),
+                subtitle: Text(event['shared'] == true ? '공유 중 · 선택해서 공유 취소' : '나만 저장 · 선택해서 공개 내용 확인'),
+                trailing: Icon(event['shared'] == true ? Icons.public : Icons.share_outlined),
+                onTap: () => Navigator.pop(context, event),
+              ),
+          ])),
+        ]),
+      )),
+    );
+    if (event != null && mounted) await _shareEvent(event);
+  }
+
+  Future<void> _shareEvent(Map<String, dynamic> event) async {
+    if (sharingEvent) return;
+    final shared = event['shared'] == true;
+    final start = DateTime.tryParse(event['startsAt'] as String? ?? '')?.toLocal();
+    final end = DateTime.tryParse(event['endsAt'] as String? ?? '')?.toLocal();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(shared ? '행사 공유를 취소할까요?' : '이 행사 정보를 공개할까요?'),
+        content: SingleChildScrollView(child: Text(shared
+          ? '공유한 행사와 추천 노출을 중단해요. 다른 사람이 이미 자기 캘린더에 저장한 일정은 남아요.'
+          : '${event['title']}\n${event['venue']}\n'
+            '${start == null ? '' : _date(start)} ~ ${end == null ? '' : _date(end)}\n\n'
+            '${event['description'] ?? ''}\n\n'
+            '분야: ${event['category'] ?? ''}\n'
+            '태그: ${(event['tags'] as List<dynamic>? ?? []).join(', ')}\n'
+            '참가비: ${event['participationFee'] ?? '정보 없음'}\n'
+            '신청 마감: ${event['applicationDeadline'] ?? '정보 없음'}\n'
+            '출처: ${event['sourceUrl'] ?? '없음'}\n\n'
+            '행사명·장소·시간·설명·분야·태그·참가비·마감일과 출처 링크를 다른 사용자에게 공개해요. '
+            '사진 원본과 캘린더 연결·알림 정보는 공유하지 않아요. '
+            '설정한 학교·활동 지역·연령대도 추천 기준으로 함께 저장돼요. '
+            '개인 메모나 비공개 행사 정보가 포함되어 있다면 먼저 수정해 주세요. '
+            '공유된 정보는 검증되지 않았으므로 참가 조건은 직접 확인해야 해요.')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('닫기')),
+          FilledButton(onPressed: () => Navigator.pop(context, true),
+            child: Text(shared ? '공유 취소' : '공개하고 공유')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => sharingEvent = true);
+    try {
+      final route = '/v1/events/${event['id']}/share';
+      if (shared) {
+        await api.delete(route);
+      } else {
+        await api.post(route, {'confirmPublic': true});
+      }
+      _message(shared ? '공유를 취소했어요.' : '행사 정보를 공유했어요.');
+      await _refresh();
+    } catch (error) {
+      _error(error);
+    } finally {
+      if (mounted) setState(() => sharingEvent = false);
+    }
   }
 
   Future<void> _updateProfile(Map<String, dynamic> changes) async {
