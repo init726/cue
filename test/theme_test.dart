@@ -11,7 +11,7 @@ void main() {
     await tester.pumpWidget(const CueApp());
     expect(find.text('사진 한 장에서 시작되는 일정'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1200));
-    expect(find.text('행사 안내를\n캘린더에 저장하세요'), findsOneWidget);
+    expect(find.text('포스터 한 장이면\n일정이 돼요'), findsOneWidget);
     await tester.tap(find.text('설정').last);
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('내 데이터'), findsOneWidget);

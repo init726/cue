@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'cue_design.dart';
+
 // 실험: 저장한 일정을 하루 한 줄의 노선으로 보여준다. 일정은 역, 일정 사이는 선이다.
 // 아직 장소 좌표가 없어 이동 시간은 계산하지 않고, 일정 사이 간격과 장소가 같은지만 본다.
 
@@ -157,13 +159,13 @@ class _Palette {
 
   final bool dark;
 
-  Color get ink => dark ? const Color(0xFFF4F5F6) : const Color(0xFF181A1D);
-  Color get muted => dark ? const Color(0xFFA9AFB5) : const Color(0xFF697078);
+  Color get ink => dark ? const Color(0xFFECEEF0) : const Color(0xFF191F28);
+  Color get muted => dark ? const Color(0xFF9EA6B0) : const Color(0xFF6B7684);
   Color get accent => dark ? const Color(0xFF55C7F3) : const Color(0xFF169ED3);
   Color get mint => dark ? const Color(0xFF25343A) : const Color(0xFFE8F7FD);
-  Color get surface => dark ? const Color(0xFF1A1D20) : Colors.white;
-  Color get border => dark ? const Color(0xFF303438) : const Color(0xFFE7EAED);
-  Color get cue => dark ? const Color(0xFF24292C) : const Color(0xFF169ED3);
+  Color get surface => dark ? const Color(0xFF232329) : const Color(0xFFF2F4F6);
+  Color get border => dark ? const Color(0xFF2F2F36) : const Color(0xFFE5E8EB);
+  Color get cue => dark ? const Color(0xFF1F3540) : const Color(0xFF169ED3);
   Color get warn => dark ? const Color(0xFFFFB86B) : const Color(0xFFC96A12);
   Color get warnSoft => dark ? const Color(0xFF3A2A17) : const Color(0xFFFFF1E2);
 }
@@ -263,15 +265,15 @@ class _RouteViewState extends State<RouteView> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: palette.cue, borderRadius: BorderRadius.circular(22)),
+      decoration: BoxDecoration(color: palette.cue, borderRadius: BorderRadius.circular(CueRadius.card)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12,
-              letterSpacing: 1.1, fontWeight: FontWeight.w900)),
+              letterSpacing: 1.1, fontWeight: FontWeight.w700)),
           const SizedBox(height: 10),
           Text(stop.title, style: const TextStyle(color: Colors.white, fontSize: 22,
-              fontWeight: FontWeight.w900, height: 1.25)),
+              fontWeight: FontWeight.w700, height: 1.25)),
           const SizedBox(height: 8),
           Text('${clock(stop.start)} – ${clock(stop.end)} · ${stop.venue}',
               style: const TextStyle(color: Colors.white, fontSize: 14)),
@@ -313,7 +315,7 @@ class _RouteViewState extends State<RouteView> {
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
           color: isToday ? palette.mint : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(CueRadius.control),
         ),
         child: Column(
           children: [
@@ -321,7 +323,7 @@ class _RouteViewState extends State<RouteView> {
                 style: TextStyle(fontSize: 12, color: palette.muted, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             Text('${date.day}', style: TextStyle(fontSize: 16, color: palette.ink,
-                fontWeight: FontWeight.w900)),
+                fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
             SizedBox(
               height: 6,
@@ -377,12 +379,12 @@ class _RouteViewState extends State<RouteView> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(dayLabel(day.date), style: TextStyle(fontSize: 17, color: palette.ink,
-                fontWeight: FontWeight.w900)),
+                fontWeight: FontWeight.w700)),
             if (badge != null)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: palette.accent, borderRadius: BorderRadius.circular(50)),
-                child: Text(badge, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800,
+                child: Text(badge, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
                     color: palette.dark ? const Color(0xFF101214) : Colors.white)),
               ),
           ],
@@ -396,8 +398,8 @@ class _RouteViewState extends State<RouteView> {
           padding: const EdgeInsets.fromLTRB(14, 16, 16, 16),
           decoration: BoxDecoration(
             color: palette.surface,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: day.hasFork ? palette.warn.withValues(alpha: 0.6) : palette.border),
+            borderRadius: BorderRadius.circular(CueRadius.card),
+            border: day.hasFork ? Border.all(color: palette.warn.withValues(alpha: 0.6)) : null,
           ),
           child: Column(children: rows),
         ),
@@ -423,9 +425,9 @@ class _RouteViewState extends State<RouteView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(clock(stop.start), maxLines: 1, softWrap: false, style: TextStyle(fontSize: 14,
-                      color: palette.ink, fontWeight: FontWeight.w900)),
+                      color: palette.ink, fontWeight: FontWeight.w600, fontFeatures: CueType.tabular)),
                   Text(clock(stop.end), maxLines: 1, softWrap: false,
-                      style: TextStyle(fontSize: 12, color: palette.muted)),
+                      style: TextStyle(fontSize: 12, color: palette.muted, fontFeatures: CueType.tabular)),
                 ],
               ),
             ),
@@ -439,7 +441,7 @@ class _RouteViewState extends State<RouteView> {
           ),
           Expanded(
             child: InkWell(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(CueRadius.control),
               onTap: () => setState(() => expandedId = expanded ? null : stop.id),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(6, 0, 0, 14),
@@ -451,7 +453,7 @@ class _RouteViewState extends State<RouteView> {
                       children: [
                         Expanded(
                           child: Text(stop.title, style: TextStyle(fontSize: 16, color: palette.ink,
-                              fontWeight: FontWeight.w800, height: 1.3)),
+                              fontWeight: FontWeight.w600, height: 1.3)),
                         ),
                         // 눌러서 수정·취소를 펼칠 수 있다는 표시.
                         Icon(expanded ? Icons.expand_less : Icons.expand_more, size: 20, color: palette.muted),
@@ -532,7 +534,7 @@ class _RouteViewState extends State<RouteView> {
             padding: const EdgeInsets.fromLTRB(6, 2, 0, 12),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(color: palette.warnSoft, borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(color: palette.warnSoft, borderRadius: BorderRadius.circular(CueRadius.control)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -655,14 +657,14 @@ class _RouteViewState extends State<RouteView> {
     padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
     decoration: BoxDecoration(
       color: palette.surface,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(CueRadius.card),
       border: Border.all(color: palette.border),
     ),
     child: Column(
       children: [
         Icon(Icons.route_outlined, size: 40, color: palette.accent),
         const SizedBox(height: 14),
-        Text(title, style: TextStyle(fontSize: 17, color: palette.ink, fontWeight: FontWeight.w800)),
+        Text(title, style: TextStyle(fontSize: 17, color: palette.ink, fontWeight: FontWeight.w600)),
         const SizedBox(height: 6),
         Text(text, textAlign: TextAlign.center, style: TextStyle(color: palette.muted)),
       ],

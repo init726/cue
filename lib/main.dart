@@ -14,15 +14,17 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'cue_api.dart';
 import 'cue_categories.dart';
+import 'cue_design.dart';
 import 'cue_route.dart';
 import 'cue_splash.dart';
 import 'saved_event_editor.dart';
 
-const ink = Color(0xFF181A1D);
-const muted = Color(0xFF697078);
-const paper = Color(0xFFF7F8FA);
+// 흰 바탕 위에 옅은 회색 카드를 올리고, 강조색은 한 화면에 한 곳에만 쓴다.
+const ink = Color(0xFF191F28);
+const muted = Color(0xFF6B7684);
+const paper = Color(0xFFFFFFFF);
 const accent = Color(0xFF169ED3);
-const mint = Color(0xFFE8F7FD);
+const mint = Color(0xFFE6F5FB);
 final cueThemeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
 const cueApiUrl = String.fromEnvironment(
   'CUE_API_URL',
@@ -31,9 +33,9 @@ const cueApiUrl = String.fromEnvironment(
 
 ThemeData cueTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final background = dark ? const Color(0xFF101214) : paper;
-  final surface = dark ? const Color(0xFF1A1D20) : Colors.white;
-  final foreground = dark ? const Color(0xFFF4F5F6) : ink;
+  final background = dark ? const Color(0xFF17171C) : paper;
+  final surface = dark ? const Color(0xFF232329) : const Color(0xFFF2F4F6);
+  final foreground = dark ? const Color(0xFFECEEF0) : ink;
   final blue = dark ? const Color(0xFF55C7F3) : accent;
   return ThemeData(
     useMaterial3: true,
@@ -45,56 +47,62 @@ ThemeData cueTheme(Brightness brightness) {
       surface: surface,
     ),
     dividerColor: dark ? const Color(0xFF303438) : const Color(0xFFE8EBEE),
+    // 물결 효과 대신 iOS처럼 눌린 동안만 옅게 표시한다.
+    splashFactory: NoSplash.splashFactory,
+    highlightColor: dark ? const Color(0x14FFFFFF) : const Color(0x0F000000),
     navigationBarTheme: NavigationBarThemeData(
-      height: 68,
+      height: 58,
       elevation: 0,
-      backgroundColor: surface,
-      indicatorColor: dark ? const Color(0xFF29343A) : mint,
+      backgroundColor: background,
+      indicatorColor: Colors.transparent,
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
         fontSize: 11,
-        fontWeight: states.contains(WidgetState.selected) ? FontWeight.w800 : FontWeight.w600,
-        color: states.contains(WidgetState.selected) ? blue : (dark ? const Color(0xFFA9AFB5) : muted),
+        fontWeight: states.contains(WidgetState.selected) ? FontWeight.w600 : FontWeight.w500,
+        color: states.contains(WidgetState.selected) ? foreground : (dark ? const Color(0xFF8A9097) : muted),
       )),
       iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
-        size: 23,
-        color: states.contains(WidgetState.selected) ? blue : (dark ? const Color(0xFFA9AFB5) : muted),
+        size: 24,
+        color: states.contains(WidgetState.selected) ? foreground : (dark ? const Color(0xFF8A9097) : muted),
       )),
     ),
     filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
-      minimumSize: const Size(0, 52),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+      minimumSize: const Size(0, 50),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CueRadius.control)),
+      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
     )),
+    outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CueRadius.control)),
+      textStyle: const TextStyle(fontWeight: FontWeight.w600),
+    )),
+    textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(
+      foregroundColor: blue,
+      textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+    )),
+    chipTheme: ChipThemeData(
+      shape: const StadiumBorder(),
+      side: BorderSide(color: dark ? const Color(0xFF303438) : const Color(0xFFE2E5E8)),
+      showCheckmark: false,
+      labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+    ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      elevation: 12,
-      backgroundColor: surface,
-      contentTextStyle: TextStyle(color: foreground, fontWeight: FontWeight.w600),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: dark ? const Color(0xFF34383C) : const Color(0xFFE4E7EA)),
-      ),
+      elevation: 0,
+      backgroundColor: dark ? const Color(0xFF2A2E32) : const Color(0xFF23262A),
+      contentTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CueRadius.control)),
       actionTextColor: blue,
     ),
     textTheme: TextTheme(
-      headlineLarge: TextStyle(
-        fontSize: 32,
-        fontWeight: FontWeight.w800,
-        color: foreground,
-        height: 1.2,
-      ),
-      titleLarge: TextStyle(
-        fontSize: 19,
-        fontWeight: FontWeight.w800,
-        color: foreground,
-      ),
+      headlineLarge: CueType.largeTitle.copyWith(color: foreground),
+      titleLarge: CueType.title.copyWith(color: foreground),
       bodyMedium: TextStyle(fontSize: 15, color: foreground, height: 1.5),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: surface,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(CueRadius.control),
         borderSide: BorderSide.none,
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 17, vertical: 16),
@@ -151,13 +159,13 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   bool readyForShares = false;
   bool takingSharedFile = false;
   bool get isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get ink => isDark ? Color(0xFFF4F5F6) : Color(0xFF181A1D);
-  Color get muted => isDark ? Color(0xFFA9AFB5) : Color(0xFF697078);
-  Color get paper => isDark ? Color(0xFF101214) : Color(0xFFF7F8FA);
+  Color get ink => isDark ? Color(0xFFECEEF0) : Color(0xFF191F28);
+  Color get muted => isDark ? Color(0xFF9EA6B0) : Color(0xFF6B7684);
+  Color get paper => isDark ? Color(0xFF17171C) : Color(0xFFFFFFFF);
   Color get accent => isDark ? Color(0xFF55C7F3) : Color(0xFF169ED3);
-  Color get mint => isDark ? Color(0xFF25343A) : Color(0xFFE8F7FD);
-  Color get surface => isDark ? Color(0xFF1A1D20) : Colors.white;
-  Color get borderColor => isDark ? Color(0xFF303438) : Color(0xFFE7EAED);
+  Color get mint => isDark ? Color(0xFF1F3540) : Color(0xFFE6F5FB);
+  Color get surface => isDark ? Color(0xFF232329) : Color(0xFFF2F4F6);
+  Color get borderColor => isDark ? Color(0xFF2F2F36) : Color(0xFFE5E8EB);
   Color get cameraCard => isDark ? Color(0xFF202326) : Color(0xFF169ED3);
 
   final api = CueApi(cueApiUrl);
@@ -591,19 +599,19 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           Widget row(IconData icon, String label, String value, VoidCallback onTap) =>
               InkWell(
                 onTap: onTap,
-                borderRadius: BorderRadius.circular(15),
+                borderRadius: BorderRadius.circular(CueRadius.control),
                 child: Container(
                   padding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                   margin: EdgeInsets.only(bottom: 9),
                   decoration: BoxDecoration(
                     border: Border.all(color: borderColor),
-                    borderRadius: BorderRadius.circular(15),
+                    borderRadius: BorderRadius.circular(CueRadius.control),
                   ),
                   child: Row(children: [
                     Icon(icon, color: accent, size: 22),
                     SizedBox(width: 12),
                     Expanded(child: Text(label, style: TextStyle(color: muted))),
-                    Text(value, style: TextStyle(color: ink, fontWeight: FontWeight.w800, fontSize: 16)),
+                    Text(value, style: TextStyle(color: ink, fontWeight: FontWeight.w600, fontSize: 16)),
                     SizedBox(width: 4),
                     Icon(Icons.chevron_right, color: muted),
                   ]),
@@ -621,7 +629,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                   children: [
                     Text(
                       ambiguous ? '날짜와 시간을 정해 주세요' : '일정을 직접 입력해요',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: ink),
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: ink),
                     ),
                     SizedBox(height: 6),
                     Text(
@@ -1162,13 +1170,13 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       return Scaffold(
         body: SafeArea(
           child: Column(children: [
-            _header(),
-            if (apiError != null)
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: _notice(apiError!, onTap: _refresh, detail: apiErrorDetail),
-              ),
+            if (apiError != null) _notice(apiError!, onTap: _refresh, detail: apiErrorDetail),
             Expanded(child: _scroll(_onboarding())),
+            // 주 버튼은 스크롤과 상관없이 화면 아래에 고정한다.
+            Padding(
+              padding: EdgeInsets.fromLTRB(20, 8, 20, 12),
+              child: _button('시작하기', Icons.arrow_forward, _finishOnboarding),
+            ),
           ]),
         ),
       );
@@ -1177,12 +1185,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       body: SafeArea(
         child: Column(
           children: [
-            _header(),
-            if (apiError != null)
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: _notice(apiError!, onTap: _refresh, detail: apiErrorDetail),
-              ),
+            if (apiError != null) _notice(apiError!, onTap: _refresh, detail: apiErrorDetail),
             Expanded(child: AnimatedSwitcher(
               duration: Duration(milliseconds: 320),
               reverseDuration: Duration(milliseconds: 250),
@@ -1214,24 +1217,16 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ],
         ),
       ),
-      bottomNavigationBar: SafeArea(
-        minimum: EdgeInsets.fromLTRB(14, 0, 14, 10),
-        child: Container(
-          decoration: BoxDecoration(
-            color: surface,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: borderColor),
-            boxShadow: isDark ? null : [BoxShadow(
-              color: Colors.black.withValues(alpha: 0.07), blurRadius: 24, offset: Offset(0, 8))],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: NavigationBar(
+      // 떠 있는 상자 대신 화면 아래에 붙은 탭 바. 위쪽 구분선 하나로만 나눈다.
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(border: Border(top: BorderSide(color: borderColor, width: 0.5))),
+        child: NavigationBar(
             selectedIndex: tab,
             onDestinationSelected: _selectTab,
             destinations: [
           NavigationDestination(
             icon: Icon(Icons.camera_alt_outlined),
-            selectedIcon: Icon(Icons.camera_alt),
+            selectedIcon: Icon(Icons.camera_alt_rounded),
             label: '스캔',
           ),
           NavigationDestination(
@@ -1241,7 +1236,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ),
           NavigationDestination(
             icon: Icon(Icons.explore_outlined),
-            selectedIcon: Icon(Icons.explore),
+            selectedIcon: Icon(Icons.explore_rounded),
             label: '추천',
           ),
           NavigationDestination(
@@ -1251,7 +1246,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ),
             ],
           ),
-        ),
       ),
     );
   }
@@ -1265,34 +1259,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         ? view
         : RefreshIndicator(color: accent, onRefresh: onRefresh, child: view);
   }
-  Widget _header() => Padding(
-    padding: EdgeInsets.fromLTRB(22, 14, 22, 8),
-    child: Row(
-      children: [
-        Container(
-          width: 35,
-          height: 35,
-          decoration: BoxDecoration(
-            color: accent,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(Icons.camera_alt_rounded,
-              color: isDark ? Color(0xFF101214) : Colors.white, size: 19),
-        ),
-        SizedBox(width: 11),
-        Text(
-          'cue',
-          style: TextStyle(
-            fontSize: 25,
-            fontWeight: FontWeight.w900,
-            color: ink,
-            letterSpacing: -1.5,
-          ),
-        ),
-      ],
-    ),
-  );
-
   // 시작은 서버 연결 없이 바로 한다. 온보딩에서 고른 추천 설정은 서버에 연결될 때 반영한다.
   Future<void> _finishOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
@@ -1318,197 +1284,182 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     onboardingPreferencesDirty = false;
   }
 
-  Widget _onboardingStep(String number, String title, String detail) =>
-      Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(number, style: TextStyle(color: accent, fontWeight: FontWeight.w800)),
-            SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: TextStyle(color: ink, fontWeight: FontWeight.w700)),
-                  Text(detail, style: TextStyle(color: muted, fontSize: 13)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _onboarding() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      SizedBox(height: 10),
-      Text('Cue 시작하기', style: TextStyle(color: ink, fontSize: 30, fontWeight: FontWeight.w800)),
-      SizedBox(height: 8),
-      Text('포스터 한 장이면 캘린더 일정이 돼요.',
-        style: TextStyle(color: muted, height: 1.5)),
-      SizedBox(height: 24),
-      _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _eyebrow('사용 방법'),
-        SizedBox(height: 10),
-        _onboardingStep('1', '포스터나 공지문을 골라요', '촬영하거나 사진첩, PDF·한글 파일에서 고를 수 있어요.'),
-        _onboardingStep('2', '일정 정보를 자동으로 읽어요', '시간과 장소를 확인하고 필요한 내용은 고쳐 주세요.'),
-        _onboardingStep('3', '캘린더에 저장해요', '저장 버튼을 누른 일정만 캘린더에 추가돼요.'),
-      ])),
-      SizedBox(height: 14),
-      _card(SwitchListTile.adaptive(
-        contentPadding: EdgeInsets.zero,
-        title: Text('관심사 기반 행사 추천'),
-        subtitle: Text('저장한 일정과 선택 기록으로 맞는 행사를 찾아드려요.'),
-        value: personalizationEnabled && recommendationEnabled,
-        onChanged: (value) => setState(() {
-          onboardingPreferencesDirty = true;
-          personalizationEnabled = value;
-          recommendationEnabled = value;
-        }),
-      )),
-      SizedBox(height: 14),
-      Text(
-        '로그인 없이 바로 시작해요. 사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송돼요. '
-        '앱을 지우면 Cue 기록은 되찾을 수 없지만 캘린더에 저장한 일정은 남아요. '
-        '테마, 알림, 저장할 캘린더는 설정에서 바꿀 수 있어요.',
-        style: TextStyle(color: muted, fontSize: 13, height: 1.5),
-      ),
-      SizedBox(height: 20),
-      _button('시작하기', Icons.arrow_forward, _finishOnboarding),
-    ],
-  );
-
-  Widget _home() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      SizedBox(height: 8),
-      _tag('사진 한 장 → 일정 하나'),
-      SizedBox(height: 16),
-      Text(
-        '행사 안내를\n캘린더에 저장하세요',
-        style: TextStyle(
-          fontSize: 34,
-          height: 1.15,
-          fontWeight: FontWeight.w900,
-          color: ink,
-          letterSpacing: -1,
-        ),
-      ),
-      SizedBox(height: 13),
-      Text(
-        '확인한 일정만 캘린더에 저장돼요.',
-        style: TextStyle(fontSize: 15, height: 1.55, color: muted),
-      ),
-      SizedBox(height: 24),
-      if (stage == ScanStage.idle) _captureCard(),
-      if (stage == ScanStage.processing) _progressCard(),
-      if (stage == ScanStage.notEvent) _notEventCard(),
-      if (stage == ScanStage.pastEvent) _pastEventCard(),
-      if (stage == ScanStage.review) _reviewCard(),
-      if (stage == ScanStage.saved) _savedCard(),
-      SizedBox(height: 22),
-    ],
-  );
-
-  Widget _captureCard() => Container(
-    padding: EdgeInsets.all(22),
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: isDark
-            ? [Color(0xFF202326), Color(0xFF181A1D)]
-            : [Color(0xFF20A9DD), Color(0xFF118CC3)],
-      ),
-      borderRadius: BorderRadius.circular(26),
-      border: isDark ? Border.all(color: Color(0xFF34383C)) : null,
-      boxShadow: isDark ? null : [BoxShadow(
-        color: accent.withValues(alpha: 0.2), blurRadius: 28, offset: Offset(0, 12))],
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _onboardingStep(String emoji, String title, String detail) => Padding(
+    padding: EdgeInsets.symmetric(vertical: 10),
+    child: Row(
       children: [
-        if (image != null) ...[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Image.file(
-              image!,
-              height: 145,
-              width: double.infinity,
-              fit: BoxFit.cover,
-            ),
-          ),
-          SizedBox(height: 12),
-          _button('이 사진 다시 분석', Icons.refresh, _analyze, light: true),
-          SizedBox(height: 18),
-        ],
-        if (document != null) ...[
-          Row(
+        Container(
+          width: 48,
+          height: 48,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: surface, shape: BoxShape.circle),
+          child: Text(emoji, style: TextStyle(fontSize: 24)),
+        ),
+        SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.description_outlined, color: Colors.white),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  document!.name,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+              Text(title, style: CueType.headline.copyWith(color: ink)),
+              SizedBox(height: 2),
+              Text(detail, style: CueType.caption.copyWith(color: muted, fontSize: 14)),
             ],
           ),
-          SizedBox(height: 12),
-          _button('이 문서 다시 분석', Icons.refresh, _analyze, light: true),
-          SizedBox(height: 18),
-        ],
-        Text(
-          '무엇을 일정으로 바꿀까요?',
-          style: TextStyle(
-            fontSize: 21,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-          ),
-        ),
-        SizedBox(height: 7),
-        Text(
-          '포스터를 찍거나 가지고 있는 문서를 선택하세요.',
-          style: TextStyle(color: isDark ? Color(0xFFB7BCC1) : Color(0xFFE8F8FF)),
-        ),
-        SizedBox(height: 23),
-        _button(
-          '포스터 촬영하기',
-          Icons.camera_alt_outlined,
-          () => _pick(ImageSource.camera),
-          light: true,
-        ),
-        SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _button(
-                '사진첩',
-                Icons.photo_library_outlined,
-                () => _pick(ImageSource.gallery),
-                outlined: true,
-              ),
-            ),
-            SizedBox(width: 10),
-            Expanded(
-              child: _button(
-                'PDF·한글',
-                Icons.upload_file_outlined,
-                _pickDocument,
-                outlined: true,
-              ),
-            ),
-          ],
         ),
       ],
     ),
   );
+
+  Widget _onboarding() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SizedBox(height: 28),
+      Text('행사 포스터를\n일정으로 바꿔 드릴게요', style: CueType.largeTitle.copyWith(color: ink)),
+      SizedBox(height: 8),
+      Text('Cue 시작하기', style: CueType.body.copyWith(color: muted, fontSize: 15)),
+      SizedBox(height: 32),
+      _onboardingStep('📸', '포스터나 공지문을 찍어요', '사진첩, PDF·한글 파일도 읽을 수 있어요'),
+      _onboardingStep('👀', '읽어낸 내용을 확인해요', '날짜·시간·장소는 저장 전에 고칠 수 있어요'),
+      _onboardingStep('🗓️', '캘린더에 저장해요', '저장을 누른 일정만 캘린더에 추가돼요'),
+      SizedBox(height: 28),
+      _group([
+        _row('관심사 기반 행사 추천',
+            subtitle: '저장한 일정으로 맞는 행사를 찾아드려요',
+            trailing: Switch.adaptive(
+              value: personalizationEnabled && recommendationEnabled,
+              onChanged: (value) => setState(() {
+                onboardingPreferencesDirty = true;
+                personalizationEnabled = value;
+                recommendationEnabled = value;
+              }),
+            )),
+      ], footer: '로그인 없이 바로 시작해요. 사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송돼요. '
+          '앱을 지우면 Cue 기록은 되찾을 수 없지만 캘린더에 저장한 일정은 남아요.'),
+    ],
+  );
+
+  Widget _home() {
+    final idle = stage == ScanStage.idle;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (idle) ..._homeGreeting() else _pageTitle('스캔'),
+        SizedBox(height: idle ? 24 : 16),
+        if (idle) _captureCard(),
+        if (stage == ScanStage.processing) _progressCard(),
+        if (stage == ScanStage.notEvent) _notEventCard(),
+        if (stage == ScanStage.pastEvent) _pastEventCard(),
+        if (stage == ScanStage.review) _reviewCard(),
+        if (stage == ScanStage.saved) _savedCard(),
+        SizedBox(height: 22),
+      ],
+    );
+  }
+
+  // 첫 화면은 오늘 날짜와 다음 일정으로 시작한다. 사용자와 관련된 정보가 먼저 보여야 한다.
+  List<Widget> _homeGreeting() {
+    final now = DateTime.now();
+    final next = nextCue(buildRoute(saved), now);
+    return [
+      Text(dayLabel(now), style: CueType.body.copyWith(color: muted, fontSize: 15)),
+      SizedBox(height: 6),
+      Text('포스터 한 장이면\n일정이 돼요', style: CueType.largeTitle.copyWith(color: ink)),
+      if (next != null) ...[
+        SizedBox(height: 20),
+        Material(
+          color: surface,
+          borderRadius: BorderRadius.circular(CueRadius.card),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _selectTab(1),
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Row(children: [
+                Text('🗓️', style: TextStyle(fontSize: 22)),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(next.inProgress ? '지금 진행 중' : '다음 일정 · ${countdown(next.stop.start, now)}',
+                        style: CueType.label.copyWith(color: accent)),
+                    SizedBox(height: 2),
+                    Text(next.stop.title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: CueType.headline.copyWith(color: ink)),
+                  ]),
+                ),
+                Icon(Icons.chevron_right, size: 20, color: muted),
+              ]),
+            ),
+          ),
+        ),
+      ],
+    ];
+  }
+
+  // 촬영 타일 하나만 강조하고, 사진첩과 문서는 아래 목록으로 둔다.
+  Widget _captureCard() {
+    final picked = image != null || document != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Material(
+          color: surface,
+          borderRadius: BorderRadius.circular(CueRadius.card),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: picked ? null : () => _pick(ImageSource.camera),
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (image != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(CueRadius.control),
+                      child: Image.file(image!, height: 200, width: double.infinity, fit: BoxFit.cover),
+                    )
+                  else if (document != null)
+                    Row(children: [
+                      Text('📄', style: TextStyle(fontSize: 28)),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(document!.name, maxLines: 2, overflow: TextOverflow.ellipsis,
+                            style: CueType.headline.copyWith(color: ink)),
+                      ),
+                    ])
+                  else
+                    SizedBox(
+                      height: 160,
+                      width: double.infinity,
+                      child: CustomPaint(painter: _PosterArt(
+                        front: isDark ? Color(0xFF3A3A43) : Colors.white,
+                        back: isDark ? Color(0xFF2D2D35) : Color(0xFFE3E7EB),
+                        line: isDark ? Color(0xFF55555F) : Color(0xFFDDE1E5),
+                        accent: accent,
+                        shadow: !isDark,
+                      )),
+                    ),
+                  SizedBox(height: 20),
+                  Text(picked ? '다시 읽어 볼까요?' : '포스터 찍기', style: CueType.title.copyWith(color: ink)),
+                  SizedBox(height: 4),
+                  Text('찍으면 날짜·시간·장소를 읽어 드려요',
+                      style: CueType.caption.copyWith(color: muted, fontSize: 14)),
+                  SizedBox(height: 18),
+                  picked
+                      ? _button(image != null ? '이 사진 다시 분석' : '이 문서 다시 분석', Icons.refresh, _analyze)
+                      : _button('포스터 촬영하기', Icons.camera_alt_outlined, () => _pick(ImageSource.camera)),
+                ],
+              ),
+            ),
+          ),
+        ),
+        SizedBox(height: 12),
+        _group([
+          _row('앨범에서 고르기', leading: '🖼️', onTap: () => _pick(ImageSource.gallery)),
+          _row('PDF·한글 공지문 열기', leading: '📄', onTap: _pickDocument),
+        ], footer: '읽어낸 내용을 확인한 뒤에만 캘린더에 저장돼요.'),
+      ],
+    );
+  }
 
   Widget _progressCard() => _card(
     Column(
@@ -1516,7 +1467,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       children: [
         if (image != null)
           ClipRRect(
-            borderRadius: BorderRadius.circular(17),
+            borderRadius: BorderRadius.circular(CueRadius.control),
             child: Image.file(
               image!,
               height: 180,
@@ -1552,7 +1503,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                 statusMessage ?? '분석하는 중',
                 style: TextStyle(
                   fontSize: 18,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   color: ink,
                 ),
               ),
@@ -1583,7 +1534,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           '행사 안내물을 찾지 못했어요',
           style: TextStyle(
             fontSize: 20,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w600,
             color: ink,
           ),
         ),
@@ -1610,7 +1561,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           SizedBox(height: 15),
           Text(
             '이미 지난 행사예요',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: ink),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: ink),
           ),
           SizedBox(height: 8),
           Text(
@@ -1635,10 +1586,10 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
-          Text('${reviewStep + 1} / 4', style: TextStyle(color: accent, fontWeight: FontWeight.w900)),
+          Text('${reviewStep + 1} / 4', style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
           SizedBox(width: 12),
           Expanded(child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(CueRadius.card),
             child: LinearProgressIndicator(
               value: (reviewStep + 1) / 4,
               minHeight: 7,
@@ -1648,7 +1599,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           )),
         ]),
         SizedBox(height: 14),
-        Text(labels[reviewStep], style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900, color: ink)),
+        Text(labels[reviewStep], style: TextStyle(fontSize: 27, fontWeight: FontWeight.w700, color: ink)),
         SizedBox(height: 5),
         Text('AI가 읽은 내용을 한 단계씩 확인해 주세요.', style: TextStyle(color: muted)),
         SizedBox(height: 20),
@@ -1712,7 +1663,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     children: [
       Container(
         width: 54, height: 54,
-        decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(18)),
+        decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(CueRadius.card)),
         child: Icon(Icons.celebration_rounded, color: accent),
       ),
       SizedBox(height: 18),
@@ -1734,12 +1685,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text('가장 가까운 종류를 선택하세요',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: ink)),
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: ink)),
       SizedBox(height: 4),
       Text('선택한 종류는 추천 정확도에 반영돼요.', style: TextStyle(color: muted, fontSize: 13)),
       SizedBox(height: 18),
       for (final group in cueCategoryGroups.entries) ...[
-        Text(group.key, style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w800)),
+        Text(group.key, style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w600)),
         SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -1762,7 +1713,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     children: [
       if (event.sessions.length > 1) ...[
         Text('참석할 일정 하나를 선택하세요',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: ink)),
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: ink)),
         SizedBox(height: 12),
         for (var i = 0; i < event.sessions.length; i++) _sessionChoice(i, event.sessions[i]),
         SizedBox(height: 8),
@@ -1789,18 +1740,18 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text('언제 알려드릴까요?',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: ink)),
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: ink)),
       SizedBox(height: 14),
       for (final option in [15, 60, 1440, -1]) Padding(
         padding: EdgeInsets.only(bottom: 9),
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(CueRadius.card),
           onTap: () => setState(() => reminderMinutes = option),
           child: Container(
             padding: EdgeInsets.symmetric(horizontal: 15, vertical: 14),
             decoration: BoxDecoration(
               color: reminderMinutes == option ? mint : paper,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(CueRadius.card),
               border: Border.all(color: reminderMinutes == option ? accent : borderColor),
             ),
             child: Row(children: [
@@ -1814,7 +1765,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       ),
       Divider(color: borderColor, height: 28),
       InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(CueRadius.control),
         onTap: () => setState(() => showUnknownInputs = !showUnknownInputs),
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
@@ -1887,7 +1838,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                       '참석할 일정을 선택해 주세요',
                       style: TextStyle(
                         fontSize: 20,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                         color: ink,
                       ),
                     ),
@@ -1948,7 +1899,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         selectedSession = index;
         _applySession(index);
       }),
-      borderRadius: BorderRadius.circular(15),
+      borderRadius: BorderRadius.circular(CueRadius.control),
       child: Container(
         padding: EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -1957,7 +1908,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             color: selectedSession == index ? accent : borderColor,
             width: selectedSession == index ? 2 : 1,
           ),
-          borderRadius: BorderRadius.circular(15),
+          borderRadius: BorderRadius.circular(CueRadius.control),
         ),
         child: Row(
           children: [
@@ -1976,7 +1927,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                     session.label.isEmpty
                         ? _date(session.startsAt)
                         : session.label,
-                    style: TextStyle(fontWeight: FontWeight.w800, color: ink),
+                    style: TextStyle(fontWeight: FontWeight.w600, color: ink),
                   ),
                   Text(
                     '${_date(session.startsAt)} · ${session.venue}',
@@ -2038,7 +1989,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             '저장 완료',
             style: TextStyle(
               fontSize: 22,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
               color: ink,
             ),
           ),
@@ -2051,13 +2002,13 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
               padding: EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: warn ? (isDark ? Color(0xFF3A2A17) : Color(0xFFFFF1E2)) : mint,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(CueRadius.control),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('${dayLabel(day.date)} · 일정 ${day.stops.length}곳',
-                      style: TextStyle(color: ink, fontWeight: FontWeight.w800)),
+                      style: TextStyle(color: ink, fontWeight: FontWeight.w600)),
                   SizedBox(height: 4),
                   Text(note, style: TextStyle(
                     color: warn ? (isDark ? Color(0xFFFFB86B) : Color(0xFFC96A12)) : muted,
@@ -2102,7 +2053,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: _pageTitle('내 일정', routeView ? '하루 동선으로 보는 일정' : '확인하고 저장한 행사'),
+            child: _pageTitle('내 일정'),
           ),
           SegmentedButton<bool>(
             showSelectedIcon: false,
@@ -2115,16 +2066,13 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ),
         ],
       ),
-      SizedBox(height: 22),
       if (saved.isNotEmpty)
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: sharingEvent ? null : _manageShares,
-            icon: Icon(Icons.people_outline),
-            label: Text('행사 공유 관리 (실험)'),
-          ),
+        TextButton(
+          onPressed: sharingEvent ? null : _manageShares,
+          style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+          child: Text('행사 공유 관리 (실험)'),
         ),
+      SizedBox(height: 16),
       if (saved.isEmpty)
         _empty(Icons.event_note_outlined, '아직 저장한 행사가 없어요', '포스터나 공지문을 선택해 보세요.')
       else if (routeView)
@@ -2148,10 +2096,20 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   Widget _discover() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _pageTitle('추천 행사', '관심 분야와 가까운 행사'),
-      SizedBox(height: 8),
+      Row(
+        children: [
+          Expanded(child: _pageTitle('추천')),
+          IconButton(
+            tooltip: '다른 행사 보기',
+            onPressed: recommendationLoading ? null : () => _refresh(shuffle: true),
+            icon: Icon(Icons.refresh, color: ink),
+          ),
+        ],
+      ),
+      SizedBox(height: 12),
       Wrap(
         spacing: 8,
+        runSpacing: 8,
         children: [
           for (final source in (const {'all': '전체', 'web': '웹에서 찾은 행사', 'shared': '사용자 공유'}).entries)
             ChoiceChip(
@@ -2161,21 +2119,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             ),
         ],
       ),
-      TextButton.icon(
+      TextButton(
         onPressed: _editCommunity,
-        icon: Icon(Icons.tune),
-        label: Text('학교·활동 지역으로 추천받기'),
+        style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+        child: Text('학교·활동 지역으로 추천받기'),
       ),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton.icon(
-          onPressed: recommendationLoading ? null : () => _refresh(shuffle: true),
-          icon: Icon(Icons.shuffle, size: 18),
-          label: Text('다른 행사 보기'),
-          style: TextButton.styleFrom(padding: EdgeInsets.zero),
-        ),
-      ),
-      SizedBox(height: 6),
+      SizedBox(height: 8),
       if (recommendationLoading && recommended.isEmpty)
         _empty(Icons.search, '관련 행사 확인 중', '행사 정보를 확인하고 있어요.'),
       if (!recommendationLoading && recommended.isEmpty)
@@ -2207,20 +2156,14 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => setState(() => settingsSection = null),
-              icon: Icon(Icons.arrow_back),
-              label: Text('설정으로'),
-            ),
+          TextButton.icon(
+            onPressed: () => setState(() => settingsSection = null),
+            icon: Icon(Icons.chevron_left, size: 22),
+            label: Text('설정으로'),
+            style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
           ),
-          _pageTitle(section, switch (section) {
-            '캘린더와 알림' => '새 일정을 저장할 때 적용할 기본값',
-            '화면 테마' => '편안하게 볼 수 있는 화면',
-            '추천' => '관심사 기록과 행사 추천 관리',
-            _ => '데이터 처리와 익명 계정 안내',
-          }),
+          SizedBox(height: 4),
+          _pageTitle(section),
           SizedBox(height: 20),
           ..._settingsContent(section),
         ],
@@ -2230,275 +2173,137 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _pageTitle('설정', 'Cue를 내게 맞게'),
+        _pageTitle('설정'),
         SizedBox(height: 20),
-        _card(Column(children: [
-          _settingsEntry(Icons.calendar_month_outlined, '캘린더와 알림',
-              '$preferredCalendarName · ${_reminderLabel(defaultReminderMinutes)}'),
-          Divider(color: borderColor, height: 1),
-          _settingsEntry(Icons.palette_outlined, '화면 테마',
-              switch (cueThemeMode.value) {
-                ThemeMode.system => '시스템 설정 따르기',
-                ThemeMode.light => '라이트',
-                ThemeMode.dark => '다크',
-              }),
-          Divider(color: borderColor, height: 1),
-          _settingsEntry(Icons.auto_awesome_outlined, '추천',
-              personalizationEnabled && recommendationEnabled ? '관심사 기반 추천 사용 중' : '추천 꺼짐'),
-          Divider(color: borderColor, height: 1),
-          _settingsEntry(Icons.shield_outlined, '내 데이터', '사진 처리 안내 · 계정과 기록'),
-        ])),
+        _group([
+          _settingsEntry('🗓️', '캘린더와 알림', _reminderLabel(defaultReminderMinutes)),
+          _settingsEntry('🌗', '화면 테마', switch (cueThemeMode.value) {
+            ThemeMode.system => '시스템',
+            ThemeMode.light => '라이트',
+            ThemeMode.dark => '다크',
+          }),
+          _settingsEntry('💡', '추천', personalizationEnabled && recommendationEnabled ? '켜짐' : '꺼짐'),
+          _settingsEntry('🔒', '내 데이터', ''),
+        ]),
       ],
     );
   }
 
-  Widget _settingsEntry(IconData icon, String title, String summary) => ListTile(
-    contentPadding: EdgeInsets.zero,
-    leading: Icon(icon, color: accent),
-    title: Text(title),
-    subtitle: Text(summary, maxLines: 2, overflow: TextOverflow.ellipsis),
-    trailing: Icon(Icons.chevron_right, color: muted),
+  Widget _settingsEntry(String emoji, String title, String summary) => _row(
+    title,
+    leading: emoji,
+    value: summary.isEmpty ? null : summary,
     onTap: () => setState(() => settingsSection = title),
   );
 
   List<Widget> _settingsContent(String section) => switch (section) {
     '캘린더와 알림' => [
-      _card(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _eyebrow('캘린더와 알림'),
-            SizedBox(height: 8),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.calendar_month_outlined, color: accent),
-              title: Text('저장할 캘린더'),
-              subtitle: Text(preferredCalendarName),
-              trailing: Icon(Icons.chevron_right, color: muted),
-              onTap: _chooseCalendar,
-            ),
-            Divider(color: borderColor),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.notifications_outlined, color: accent),
-              title: Text('기본 알림'),
-              subtitle: Text('새 행사에 먼저 적용돼요'),
-              trailing: DropdownButton<int>(
-                value: defaultReminderMinutes,
-                underline: SizedBox.shrink(),
-                items: [15, 60, 1440, -1]
-                    .map(
-                      (value) => DropdownMenuItem(
-                        value: value,
-                        child: Text(_reminderLabel(value)),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) async {
-                  if (value == null) return;
-                  setState(() {
-                    defaultReminderMinutes = value;
-                    reminderMinutes = value;
-                  });
-                  await (await SharedPreferences.getInstance()).setInt(
-                    'default_reminder_minutes',
-                    value,
-                  );
-                },
-              ),
-            ),
-            Divider(color: borderColor),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.timelapse_outlined, color: accent),
-              title: Text('기본 일정 길이'),
-              subtitle: Text('종료 시간이 없는 행사에 적용돼요'),
-              trailing: DropdownButton<int>(
-                value: defaultDurationMinutes,
-                underline: SizedBox.shrink(),
-                items: [60, 120, 180]
-                    .map(
-                      (value) => DropdownMenuItem(
-                        value: value,
-                        child: Text('${value ~/ 60}시간'),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) async {
-                  if (value == null) return;
-                  setState(() => defaultDurationMinutes = value);
-                  await (await SharedPreferences.getInstance()).setInt(
-                    'default_duration_minutes',
-                    value,
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-      SizedBox(height: 14),
-    ],
-    '화면 테마' => [
-      _card(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _eyebrow('화면 테마'),
-            SizedBox(height: 14),
-            SegmentedButton<ThemeMode>(
-              segments: [
-                ButtonSegment(value: ThemeMode.system, label: Text('시스템')),
-                ButtonSegment(value: ThemeMode.light, label: Text('라이트')),
-                ButtonSegment(value: ThemeMode.dark, label: Text('다크')),
-              ],
-              selected: {cueThemeMode.value},
-              onSelectionChanged: (value) async {
-                cueThemeMode.value = value.first;
-                await (await SharedPreferences.getInstance()).setString(
-                  'theme_mode',
-                  value.first.name,
-                );
+      _group([
+        _row('저장할 캘린더', value: preferredCalendarName, onTap: _chooseCalendar),
+        _row('기본 알림', trailing: DropdownButtonHideUnderline(
+            child: DropdownButton<int>(
+              value: defaultReminderMinutes,
+              style: CueType.body.copyWith(color: muted),
+              items: [15, 60, 1440, -1]
+                  .map((value) => DropdownMenuItem(value: value, child: Text(_reminderLabel(value))))
+                  .toList(),
+              onChanged: (value) async {
+                if (value == null) return;
+                setState(() {
+                  defaultReminderMinutes = value;
+                  reminderMinutes = value;
+                });
+                await (await SharedPreferences.getInstance()).setInt('default_reminder_minutes', value);
               },
             ),
-          ],
-        ),
-      ),
-      SizedBox(height: 14),
+          )),
+        _row('기본 일정 길이', subtitle: '종료 시간이 없는 행사에 적용돼요',
+            trailing: DropdownButtonHideUnderline(
+            child: DropdownButton<int>(
+              value: defaultDurationMinutes,
+              style: CueType.body.copyWith(color: muted),
+              items: [60, 120, 180]
+                  .map((value) => DropdownMenuItem(value: value, child: Text('${{value ~/ 60}}시간')))
+                  .toList(),
+              onChanged: (value) async {
+                if (value == null) return;
+                setState(() {
+                  defaultDurationMinutes = value;
+                });
+                await (await SharedPreferences.getInstance()).setInt('default_duration_minutes', value);
+              },
+            ),
+          )),
+      ], footer: '새 일정을 저장할 때 먼저 적용되는 값이에요.'),
+    ],
+    '화면 테마' => [
+      _group([
+        for (final (mode, label) in [(ThemeMode.system, '시스템'), (ThemeMode.light, '라이트'), (ThemeMode.dark, '다크')])
+          _row(label,
+              trailing: cueThemeMode.value == mode ? Icon(Icons.check, size: 20, color: accent) : SizedBox(width: 20),
+              onTap: () async {
+                cueThemeMode.value = mode;
+                setState(() {});
+                await (await SharedPreferences.getInstance()).setString('theme_mode', mode.name);
+              }),
+      ], footer: '시스템을 고르면 기기의 라이트·다크 설정을 따라가요.'),
     ],
     '추천' => [
-      _card(ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: Icon(Icons.people_outline, color: accent),
-        title: Text('내 추천 환경 (실험)'),
-        subtitle: Text([communitySchool, communityRegion, _ageBandLabel(communityAgeBand)]
-            .where((value) => value.isNotEmpty).join(' · ').isEmpty
-                ? '학교·활동 지역·연령대 선택'
-                : [communitySchool, communityRegion, _ageBandLabel(communityAgeBand)]
-                    .where((value) => value.isNotEmpty).join(' · ')),
-        trailing: Icon(Icons.chevron_right, color: muted),
-        onTap: _editCommunity,
-      )),
-      SizedBox(height: 14),
-      _card(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _eyebrow('개인화와 추천'),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text('관심사 기반 추천'),
-              subtitle: Text('끄면 추천을 위한 선택 기록을 사용하지 않아요.'),
+      _group([
+        _row('관심사 기반 추천',
+            trailing: Switch.adaptive(
               value: personalizationEnabled,
-              onChanged: (value) =>
-                  _updateProfile({'personalizationEnabled': value}),
-            ),
-            Divider(color: borderColor),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text('행사 추천 표시'),
-              subtitle: Text('추천 행사 화면에 표시할지 정해요.'),
+              onChanged: (value) => _updateProfile({'personalizationEnabled': value}),
+            )),
+        _row('행사 추천 표시',
+            trailing: Switch.adaptive(
               value: recommendationEnabled,
               onChanged: personalizationEnabled
                   ? (value) => _updateProfile({'recommendationEnabled': value})
                   : null,
-            ),
-          ],
-        ),
-      ),
-      SizedBox(height: 14),
-      _card(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _eyebrow('관심사 기록'),
-            SizedBox(height: 8),
-            Text(
-              '관심 표시와 추천 기록, Cue가 파악한 관심사를 모두 지워요. 저장한 일정은 그대로 남아요.',
-              style: TextStyle(color: muted, height: 1.5),
-            ),
-            SizedBox(height: 14),
-            OutlinedButton.icon(
-              onPressed: _resetInterests,
-              icon: Icon(Icons.delete_sweep_outlined),
-              label: Text('내 관심사 기록 초기화'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Color(0xFFE5484D),
-                side: BorderSide(color: Color(0xFFE5484D)),
-                minimumSize: Size.fromHeight(50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-              ),
-            ),
-          ],
-        ),
-      ),
-      SizedBox(height: 14),
+            )),
+      ], footer: '끄면 추천을 위한 선택 기록을 사용하지 않아요.'),
+      _group([
+        _row('학교·활동 지역·연령대',
+            value: [communitySchool, communityRegion, _ageBandLabel(communityAgeBand)]
+                .where((value) => value.isNotEmpty).join(' · ').ifEmpty('선택 안 함'),
+            onTap: _editCommunity),
+      ], label: '내 추천 환경 (실험)', footer: '비슷한 환경의 사용자가 공유한 행사를 먼저 보여드려요.'),
+      _group([
+        _row('내 관심사 기록 초기화', color: Color(0xFFE5484D), onTap: _resetInterests),
+      ], footer: '관심 표시와 추천 기록, Cue가 파악한 관심사를 모두 지워요. 저장한 일정은 그대로 남아요.'),
     ],
     '내 데이터' => [
-      _card(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '사진과 일정 데이터',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: ink,
-              ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              '사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송돼요. 행사 안내물이 아니면 더 분석하지 않아요.',
-              style: TextStyle(color: muted, height: 1.5),
-            ),
-          ],
+      _group([
+        Padding(
+          padding: EdgeInsets.all(16),
+          child: Text(
+            '사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송돼요. 행사 안내물이 아니면 더 분석하지 않아요.',
+            style: CueType.body.copyWith(color: ink, fontSize: 15),
+          ),
         ),
-      ),
-      SizedBox(height: 14),
-      _card(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _eyebrow('내 기록'),
-            SizedBox(height: 8),
-            Text(
-              userId == null
-                  ? '아직 서버에 연결되지 않았어요. 연결되면 일정과 관심사가 기록돼요.'
-                  : '로그인 없이 쓰는 익명 계정에 일정과 관심사가 기록되고 있어요.',
-              style: TextStyle(color: ink, height: 1.5),
+      ], label: '사진과 문서'),
+      _group([
+        _row(userId == null ? '서버에 연결되지 않음' : '익명 계정에 기록 중',
+            subtitle: '앱을 지우거나 기기를 바꾸면 Cue 기록은 되찾을 수 없어요. 기기 캘린더의 일정은 그대로 남아요.'),
+        _row('연결 다시 확인', color: accent, onTap: _refresh),
+        _row('개발자 정보',
+            trailing: Icon(showDeveloperInfo ? Icons.expand_less : Icons.expand_more, size: 20, color: muted),
+            onTap: () => setState(() => showDeveloperInfo = !showDeveloperInfo)),
+        if (showDeveloperInfo)
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 14),
+            child: SelectableText(
+              [
+                '서버  $cueApiUrl',
+                '클라우드 저장소  ${cloudConnected ? '연결됨' : '연결 안 됨'}',
+                if (userId != null) '사용자 ID  $userId',
+                if (apiErrorDetail != null) '마지막 오류  $apiErrorDetail',
+              ].join('\n'),
+              style: CueType.caption.copyWith(color: muted, fontSize: 12),
             ),
-            SizedBox(height: 6),
-            Text(
-              '앱을 지우거나 기기를 바꾸면 Cue 기록은 되찾을 수 없어요. 기기 캘린더에 저장한 일정은 그대로 남아요.',
-              style: TextStyle(color: muted, fontSize: 13, height: 1.5),
-            ),
-            SizedBox(height: 6),
-            InkWell(
-              onTap: () => setState(() => showDeveloperInfo = !showDeveloperInfo),
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Row(children: [
-                  Text('개발자 정보', style: TextStyle(color: muted, fontSize: 13, fontWeight: FontWeight.w700)),
-                  Icon(showDeveloperInfo ? Icons.expand_less : Icons.expand_more, size: 18, color: muted),
-                ]),
-              ),
-            ),
-            if (showDeveloperInfo)
-              SelectableText(
-                [
-                  '서버  $cueApiUrl',
-                  '클라우드 저장소  ${cloudConnected ? '연결됨' : '연결 안 됨'}',
-                  if (userId != null) '사용자 ID  $userId',
-                  if (apiErrorDetail != null) '마지막 오류  $apiErrorDetail',
-                ].join('\n'),
-                style: TextStyle(color: muted, fontSize: 12, height: 1.5),
-              ),
-          ],
-        ),
-      ),
-      SizedBox(height: 14),
-      TextButton.icon(onPressed: _refresh, icon: Icon(Icons.refresh), label: Text('연결 다시 확인')),
+          ),
+      ], label: '내 기록'),
     ],
     _ => const <Widget>[],
   };
@@ -2568,7 +2373,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             event['title'] as String? ?? '',
             style: TextStyle(
               fontSize: 18,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
               color: ink,
             ),
           ),
@@ -2577,19 +2382,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           _detail(Icons.place_outlined, event['venue'] as String? ?? ''),
           if (recommended && event['reason'] is String) ...[
             SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.auto_awesome, size: 15, color: accent),
-                SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    event['reason'] as String,
-                    style: TextStyle(color: accent, fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
+            Text(event['reason'] as String, style: CueType.caption.copyWith(color: muted)),
           ],
           if (recommended && description.isNotEmpty) ...[
             SizedBox(height: 8),
@@ -2648,8 +2441,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                       backgroundColor: accent,
                       foregroundColor: isDark ? Color(0xFF101214) : Colors.white,
                       minimumSize: Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      textStyle: TextStyle(fontWeight: FontWeight.w800),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CueRadius.control)),
+                      textStyle: TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
@@ -2732,7 +2525,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         height: MediaQuery.sizeOf(context).height * 0.65,
         child: Column(children: [
           Padding(padding: EdgeInsets.all(20), child: Text('내가 발견한 행사 공유',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600))),
           Expanded(child: ListView(children: [
             for (final event in saved)
               ListTile(
@@ -2913,102 +2706,127 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       ],
     ),
   );
-  Widget _pageTitle(String title, String subtitle) => Column(
+  Widget _pageTitle(String title, [String subtitle = '']) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
-        title,
-        style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: ink),
-      ),
-      SizedBox(height: 5),
-      Text(subtitle, style: TextStyle(color: muted)),
+      Text(title, style: CueType.largeTitle.copyWith(color: ink)),
+      if (subtitle.isNotEmpty) ...[
+        SizedBox(height: 4),
+        Text(subtitle, style: CueType.body.copyWith(color: muted, fontSize: 15)),
+      ],
     ],
   );
-  Widget _empty(IconData icon, String title, String text) => _card(
-    Center(
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: 28),
-        child: Column(
-          children: [
-            Icon(icon, size: 44, color: accent),
-            SizedBox(height: 16),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: ink,
-              ),
-            ),
-            SizedBox(height: 6),
-            Text(
-              text,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: muted),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-  Widget _notice(String text, {VoidCallback? onTap, String? detail}) => Container(
-    padding: EdgeInsets.fromLTRB(13, 10, 8, 10),
-    decoration: BoxDecoration(
-      color: isDark ? Color(0xFF20282C) : Color(0xFFEAF8FD),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: isDark ? Color(0xFF304047) : Color(0xFFD6EEF8)),
-    ),
-    child: Row(
+  // 빈 화면은 상자에 넣지 않는다. 짧은 제목과 설명만 둔다.
+  Widget _empty(IconData icon, String title, String text) => Padding(
+    padding: EdgeInsets.symmetric(vertical: 28, horizontal: 4),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.info_outline, size: 20, color: accent),
-        SizedBox(width: 7),
-        Expanded(
-          child: Text(text, style: TextStyle(fontSize: 12, color: ink)),
-        ),
-        if (detail != null && detail != text)
-          TextButton(onPressed: () => _showDetail(detail), child: Text('자세히')),
-        if (onTap != null)
-          IconButton(
-            onPressed: onTap,
-            icon: Icon(Icons.refresh),
-            tooltip: '다시 연결',
-          ),
+        Icon(icon, size: 24, color: muted),
+        SizedBox(height: 12),
+        Text(title, style: CueType.headline.copyWith(color: ink)),
+        SizedBox(height: 4),
+        Text(text, style: CueType.caption.copyWith(color: muted, fontSize: 14)),
       ],
     ),
   );
+  // 연결 문제는 화면 맨 위 한 줄로만 알린다.
+  Widget _notice(String text, {VoidCallback? onTap, String? detail}) => Container(
+    padding: EdgeInsets.fromLTRB(20, 6, 8, 6),
+    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: borderColor, width: 0.5))),
+    child: Row(
+      children: [
+        Icon(Icons.cloud_off_outlined, size: 16, color: muted),
+        SizedBox(width: 8),
+        Expanded(
+          child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: CueType.caption.copyWith(color: muted)),
+        ),
+        if (detail != null && detail != text)
+          TextButton(onPressed: () => _showDetail(detail), child: Text('자세히')),
+        if (onTap != null) TextButton(onPressed: onTap, child: Text('다시 시도')),
+      ],
+    ),
+  );
+  // 행사·일정처럼 실제 대상을 담는 상자. 테두리와 그림자 없이 바탕색 차이로만 구분한다.
   Widget _card(Widget child) => Container(
     width: double.infinity,
-    padding: EdgeInsets.all(19),
+    padding: EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: surface,
-      borderRadius: BorderRadius.circular(24),
-      border: Border.all(color: borderColor),
-      boxShadow: isDark ? null : [BoxShadow(
-        color: Colors.black.withValues(alpha: 0.035), blurRadius: 18, offset: Offset(0, 5))],
+      borderRadius: BorderRadius.circular(CueRadius.card),
     ),
     child: child,
   );
-  Widget _eyebrow(String value) => Text(
-    value,
-    style: TextStyle(
-      fontSize: 12,
-      letterSpacing: 0.7,
-      color: accent,
-      fontWeight: FontWeight.w900,
-    ),
-  );
+  Widget _eyebrow(String value) => Text(value, style: CueType.label.copyWith(color: muted));
   Widget _tag(String value) => Container(
-    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(
-      color: mint,
-      borderRadius: BorderRadius.circular(10),
+    padding: EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+    decoration: ShapeDecoration(
+      color: isDark ? Color(0xFF26292D) : Color(0xFFF0F2F4),
+      shape: StadiumBorder(),
     ),
-    child: Text(
-      value,
-      style: TextStyle(
-        color: accent,
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
+    child: Text(value, style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w500)),
+  );
+  // 설정 화면처럼 줄로 나눈 묶음 목록. 상자는 묶음 하나에만 쓰고 줄마다 나누지 않는다.
+  Widget _group(List<Widget> rows, {String? label, String? footer}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (label != null)
+        Padding(padding: EdgeInsets.fromLTRB(4, 0, 4, 8), child: _eyebrow(label)),
+      Container(
+        width: double.infinity,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(CueRadius.card)),
+        child: Column(children: [
+          for (var i = 0; i < rows.length; i += 1) ...[
+            if (i > 0) Divider(height: 0.5, thickness: 0.5, indent: 16, color: borderColor),
+            rows[i],
+          ],
+        ]),
+      ),
+      if (footer != null)
+        Padding(
+          padding: EdgeInsets.fromLTRB(4, 8, 4, 0),
+          child: Text(footer, style: CueType.caption.copyWith(color: muted)),
+        ),
+      SizedBox(height: 24),
+    ],
+  );
+  Widget _row(String title, {String? leading, String? value, String? subtitle, Widget? trailing, VoidCallback? onTap, Color? color}) => InkWell(
+    onTap: onTap,
+    child: ConstrainedBox(
+      constraints: BoxConstraints(minHeight: 50),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            if (leading != null) ...[
+              Text(leading, style: TextStyle(fontSize: 20)),
+              SizedBox(width: 14),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: CueType.body.copyWith(color: color ?? ink)),
+                  if (subtitle != null) ...[
+                    SizedBox(height: 2),
+                    Text(subtitle, style: CueType.caption.copyWith(color: muted)),
+                  ],
+                ],
+              ),
+            ),
+            if (value != null) ...[
+              SizedBox(width: 12),
+              Flexible(
+                child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end, style: CueType.body.copyWith(color: muted)),
+              ),
+            ],
+            if (trailing != null) ...[SizedBox(width: 8), trailing]
+            else if (onTap != null) ...[SizedBox(width: 4), Icon(Icons.chevron_right, size: 20, color: muted)],
+          ],
+        ),
       ),
     ),
   );
@@ -3026,35 +2844,100 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     bool outlined = false,
   }) => SizedBox(
     width: double.infinity,
-    height: 54,
+    height: 50,
     child: outlined
         ? OutlinedButton.icon(
             onPressed: onTap,
-            icon: Icon(icon),
+            icon: Icon(icon, size: 20),
             label: Text(label),
             style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              side: BorderSide(color: Color(0xFFD8EEFC)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
+              foregroundColor: ink,
+              side: BorderSide(color: borderColor),
             ),
           )
         : FilledButton.icon(
             onPressed: onTap,
-            icon: Icon(icon),
+            icon: Icon(icon, size: 20),
             label: Text(label),
             style: FilledButton.styleFrom(
-              backgroundColor: light ? Color(0xFFF3FBFF) : accent,
-              foregroundColor: light
-                  ? Color(0xFF126E93)
-                  : (isDark ? Color(0xFF101214) : Colors.white),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-              textStyle: TextStyle(fontWeight: FontWeight.w800),
+              backgroundColor: light ? (isDark ? Color(0xFF26292D) : Color(0xFFEEF0F2)) : accent,
+              foregroundColor: light ? ink : (isDark ? Color(0xFF101214) : Colors.white),
             ),
           ),
   );
   String _date(DateTime value) => '${_dateOnly(value)} ${_timeOnly(value)}';
+}
+
+// 포스터 두 장과 캘린더 표시. 포스터가 일정이 된다는 것을 그림 하나로 보여 준다.
+class _PosterArt extends CustomPainter {
+  _PosterArt({required this.front, required this.back, required this.line, required this.accent, required this.shadow});
+
+  final Color front;
+  final Color back;
+  final Color line;
+  final Color accent;
+  final bool shadow;
+
+  void _poster(Canvas canvas, Offset center, double w, double h, double angle, Color fill, Color header) {
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(angle);
+    final body = RRect.fromRectAndRadius(Rect.fromLTWH(-w / 2, -h / 2, w, h), const Radius.circular(8));
+    if (shadow) canvas.drawShadow(Path()..addRRect(body), const Color(0x33000000), 4, false);
+    canvas.drawRRect(body, Paint()..color = fill);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(-w / 2 + 8, -h / 2 + 8, w - 16, h * 0.42), const Radius.circular(5)),
+      Paint()..color = header,
+    );
+    var y = -h / 2 + 8 + h * 0.42 + 10;
+    for (final ratio in [0.85, 0.55, 0.7]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(-w / 2 + 8, y, (w - 16) * ratio, 6), const Radius.circular(3)),
+        Paint()..color = line,
+      );
+      y += 12;
+    }
+    canvas.restore();
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    _poster(canvas, Offset(cx + 30, cy - 4), 88, 118, 0.14, back, line);
+    _poster(canvas, Offset(cx - 22, cy + 2), 96, 128, -0.1, front, accent.withValues(alpha: 0.85));
+
+    // 오른쪽 아래의 캘린더 표시.
+    canvas.save();
+    canvas.translate(cx + 50, cy + 36);
+    canvas.rotate(0.05);
+    final chip = RRect.fromRectAndRadius(const Rect.fromLTWH(-32, -28, 64, 56), const Radius.circular(10));
+    if (shadow) canvas.drawShadow(Path()..addRRect(chip), const Color(0x40000000), 5, false);
+    canvas.drawRRect(chip, Paint()..color = front);
+    canvas.save();
+    canvas.clipRRect(chip);
+    canvas.drawRect(const Rect.fromLTWH(-32, -28, 64, 15), Paint()..color = accent);
+    canvas.restore();
+    canvas.drawPath(
+      Path()
+        ..moveTo(-11, 6)
+        ..lineTo(-3, 14)
+        ..lineTo(12, -2),
+      Paint()
+        ..color = accent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_PosterArt old) =>
+      old.front != front || old.back != back || old.line != line || old.accent != accent || old.shadow != shadow;
+}
+
+extension on String {
+  String ifEmpty(String other) => isEmpty ? other : this;
 }

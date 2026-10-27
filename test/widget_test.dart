@@ -9,7 +9,7 @@ void main() {
     expect(find.text('사진 한 장에서 시작되는 일정'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1200));
     expect(find.text('Cue 시작하기'), findsOneWidget);
-    expect(find.text('사용 방법'), findsOneWidget);
+    expect(find.text('포스터나 공지문을 찍어요'), findsOneWidget);
     expect(find.text('관심사 기반 행사 추천'), findsOneWidget);
     // 테마·알림·일정 길이는 설정으로 옮겨 첫 화면에서 고르지 않는다.
     expect(find.text('기본 알림'), findsNothing);
@@ -30,9 +30,9 @@ void main() {
     await tester.pumpWidget(const CueApp());
     await tester.pump(const Duration(milliseconds: 1200));
     expect(find.text('포스터 촬영하기'), findsOneWidget);
-    expect(find.text('사진첩'), findsOneWidget);
-    expect(find.text('PDF·한글'), findsOneWidget);
-    expect(find.text('사용 방법'), findsNothing);
+    expect(find.text('앨범에서 고르기'), findsOneWidget);
+    expect(find.text('PDF·한글 공지문 열기'), findsOneWidget);
+    expect(find.text('포스터나 공지문을 찍어요'), findsNothing);
     expect(find.text('내 일정'), findsOneWidget);
     expect(find.text('추천'), findsOneWidget);
   });
