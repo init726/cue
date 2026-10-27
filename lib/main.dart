@@ -65,6 +65,17 @@ ThemeData cueTheme(Brightness brightness) {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       textStyle: const TextStyle(fontWeight: FontWeight.w800),
     )),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      elevation: 12,
+      backgroundColor: surface,
+      contentTextStyle: TextStyle(color: foreground, fontWeight: FontWeight.w600),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: dark ? const Color(0xFF34383C) : const Color(0xFFE4E7EA)),
+      ),
+      actionTextColor: blue,
+    ),
     textTheme: TextTheme(
       headlineLarge: TextStyle(
         fontSize: 32,
@@ -160,6 +171,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   // 추천 탭에서 '일정에 추가'로 들어온 확인 화면이면 돌아갈 곳을 추천 탭으로 한다.
   bool fromRecommendation = false;
   int tab = 0;
+  int tabDirection = 1;
+  int reviewStep = 0;
+  int reviewDirection = 1;
   ScanStage stage = ScanStage.idle;
   File? image;
   CueDocument? document;
@@ -202,6 +216,14 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   List<Map<String, dynamic>> recommended = [];
   Timer? progressTimer;
 
+  void _selectTab(int value) {
+    if (value == tab) return;
+    setState(() {
+      tabDirection = value > tab ? 1 : -1;
+      tab = value;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -224,6 +246,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (!await shared.exists()) return;
       final extension = path.toLowerCase();
       setState(() {
+        tabDirection = -1;
         tab = 0;
         stage = ScanStage.idle;
         candidate = null;
@@ -464,6 +487,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       setState(() {
         candidate = event;
         stage = ScanStage.review;
+        reviewStep = 0;
         titleController.text = event.title;
         selectedCategory = event.category;
         deadlineController.text = event.applicationDeadline == null ? '' : event.applicationDeadline!.substring(0, 10);
@@ -472,13 +496,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         selectedSession = event.sessions.length == 1 ? 0 : null;
         _applySession(selectedSession);
       });
-      // 시간·장소가 여러 개면 별도 선택창으로 바로 고르게 한다.
-      if (event.sessions.length > 1) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _chooseSession());
-      } else if (event.sessions.isEmpty) {
-        // 날짜나 장소가 분명하지 않으면 입력 후 바로 직접 고르는 시트를 띄운다.
-        WidgetsBinding.instance.addPostFrameCallback((_) => _requireSchedule());
-      }
     } catch (error) {
       if (mounted && run == analysisRun) {
         setState(() => stage = ScanStage.idle);
@@ -655,12 +672,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       selectedSession = null;
     });
     return true;
-  }
-
-  // 날짜가 불분명하면 창을 강제로 띄워 선택을 받는다. 취소하면 이 안내물 분석을 접는다.
-  Future<void> _requireSchedule() async {
-    final done = await _editSchedule(ambiguous: true, forced: true);
-    if (!done && mounted) _reset();
   }
 
   Future<void> _chooseCalendar() async {
@@ -1046,7 +1057,19 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
 
   void _message(String text) {
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+      final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(
+        margin: EdgeInsets.fromLTRB(16, 0, 16, 14),
+        content: Row(children: [
+          Container(
+            width: 34, height: 34,
+            decoration: BoxDecoration(color: mint, shape: BoxShape.circle),
+            child: Icon(Icons.check_rounded, size: 19, color: accent),
+          ),
+          SizedBox(width: 11),
+          Expanded(child: Text(text)),
+        ]),
+      ));
     }
   }
 
@@ -1065,8 +1088,18 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     if (!mounted) return;
     final text = _friendly(error, fallback: fallback);
     final detail = error.toString();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(text),
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      margin: EdgeInsets.fromLTRB(16, 0, 16, 14),
+      content: Row(children: [
+        Container(
+          width: 34, height: 34,
+          decoration: BoxDecoration(color: Color(0xFFFFEDEC), shape: BoxShape.circle),
+          child: Icon(Icons.error_outline_rounded, size: 19, color: Color(0xFFD94A45)),
+        ),
+        SizedBox(width: 11),
+        Expanded(child: Text(text)),
+      ]),
       action: detail == text
           ? null
           : SnackBarAction(label: '자세히', onPressed: () => _showDetail(detail)),
@@ -1104,6 +1137,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       document = null;
       candidate = null;
       stage = ScanStage.idle;
+      reviewStep = 0;
       selectedSession = null;
       startsAt = null;
       endsAt = null;
@@ -1140,17 +1174,34 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                 padding: EdgeInsets.symmetric(horizontal: 20),
                 child: _notice(apiError!, onTap: _refresh, detail: apiErrorDetail),
               ),
-            Expanded(
-              child: IndexedStack(
-                index: tab,
-                children: [
-                  _scroll(_home()),
-                  _scroll(_saved(), onRefresh: _refresh),
-                  _scroll(_discover(), onRefresh: () => _refresh(shuffle: true)),
-                  _scroll(_settings()),
-                ],
+            Expanded(child: AnimatedSwitcher(
+              duration: Duration(milliseconds: 320),
+              reverseDuration: Duration(milliseconds: 250),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              layoutBuilder: (current, previous) => Stack(
+                children: [...previous, ?current],
               ),
-            ),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: Offset(0.08 * tabDirection, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: KeyedSubtree(
+                key: ValueKey(tab),
+                child: switch (tab) {
+                  1 => _scroll(_saved(), onRefresh: _refresh),
+                  2 => _scroll(_discover(), onRefresh: () => _refresh(shuffle: true)),
+                  3 => _scroll(_settings()),
+                  _ => _scroll(_home()),
+                },
+              ),
+            )),
           ],
         ),
       ),
@@ -1167,7 +1218,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           clipBehavior: Clip.antiAlias,
           child: NavigationBar(
             selectedIndex: tab,
-            onDestinationSelected: (value) => setState(() => tab = value),
+            onDestinationSelected: _selectTab,
             destinations: [
           NavigationDestination(
             icon: Icon(Icons.camera_alt_outlined),
@@ -1570,195 +1621,233 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
 
   Widget _reviewCard() {
     final event = candidate!;
+    const labels = ['행사 이름', '행사 종류', '시간과 장소', '알림'];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          padding: EdgeInsets.all(17),
-          decoration: BoxDecoration(
-            color: mint,
-            borderRadius: BorderRadius.circular(18),
+        Row(children: [
+          Text('${reviewStep + 1} / 4', style: TextStyle(color: accent, fontWeight: FontWeight.w900)),
+          SizedBox(width: 12),
+          Expanded(child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: LinearProgressIndicator(
+              value: (reviewStep + 1) / 4,
+              minHeight: 7,
+              backgroundColor: mint,
+              color: accent,
+            ),
+          )),
+        ]),
+        SizedBox(height: 14),
+        Text(labels[reviewStep], style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900, color: ink)),
+        SizedBox(height: 5),
+        Text('AI가 읽은 내용을 한 단계씩 확인해 주세요.', style: TextStyle(color: muted)),
+        SizedBox(height: 20),
+        AnimatedSwitcher(
+          duration: Duration(milliseconds: 280),
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(begin: Offset(0.06 * reviewDirection, 0), end: Offset.zero).animate(animation),
+              child: child,
+            ),
           ),
-          child: Row(
-            children: [
-              Icon(Icons.check_circle_outline, color: accent),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  fromRecommendation
-                      ? '추천 행사를 일정에 추가해요. 확인하고 저장해 주세요.'
-                      : '읽어낸 일정이에요. 저장 전에 확인해 주세요.',
-                  style: TextStyle(color: accent, fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
+          child: KeyedSubtree(
+            key: ValueKey(reviewStep),
+            child: switch (reviewStep) {
+              1 => _reviewCategoryPage(),
+              2 => _reviewSchedulePage(event),
+              3 => _reviewReminderPage(),
+              _ => _reviewTitlePage(event),
+            },
           ),
         ),
         SizedBox(height: 18),
-        _card(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _eyebrow('01  행사 정보'),
-              SizedBox(height: 14),
-              TextField(
-                controller: titleController,
-                decoration: InputDecoration(
-                  labelText: '행사 이름',
-                  prefixIcon: Icon(Icons.celebration_outlined),
-                ),
-              ),
-              SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                key: ValueKey('${event.title}-$selectedCategory'),
-                initialValue: selectedCategory,
-                decoration: InputDecoration(
-                  labelText: '행사 종류',
-                  prefixIcon: Icon(Icons.category_outlined),
-                ),
-                items: cueCategories
-                    .map(
-                      (value) =>
-                          DropdownMenuItem(value: value, child: Text(value)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setState(() => selectedCategory = value);
-                },
-              ),
-              if (event.description.isNotEmpty) ...[
-                SizedBox(height: 12),
-                Text(event.description, maxLines: 3, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: muted)),
-              ],
-            ],
+        Row(children: [
+          if (reviewStep > 0) ...[
+            Expanded(child: OutlinedButton.icon(
+              onPressed: () => _setReviewStep(reviewStep - 1),
+              icon: Icon(Icons.arrow_back_rounded),
+              label: Text('이전'),
+              style: OutlinedButton.styleFrom(minimumSize: Size.fromHeight(54)),
+            )),
+            SizedBox(width: 10),
+          ],
+          Expanded(
+            flex: reviewStep > 0 ? 2 : 1,
+            child: FilledButton.icon(
+              onPressed: saving ? null : reviewStep == 3 ? _save : _nextReviewStep,
+              icon: Icon(reviewStep == 3 ? Icons.event_available_rounded : Icons.arrow_forward_rounded),
+              label: Text(reviewStep == 3
+                  ? (saving ? '저장하는 중...' : '캘린더에 저장')
+                  : '다음'),
+              style: FilledButton.styleFrom(minimumSize: Size.fromHeight(54)),
+            ),
           ),
-        ),
-        SizedBox(height: 14),
-        _card(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _eyebrow('02  시간과 장소'),
-              SizedBox(height: 8),
-              if (event.sessions.length > 1) ...[
-                Text('한 가지를 선택해야 계속할 수 있어요. 아래에서 바꿀 수도 있어요.', style: TextStyle(color: muted)),
-                SizedBox(height: 13),
-                for (var i = 0; i < event.sessions.length; i++)
-                  _sessionChoice(i, event.sessions[i]),
-              ] else if (event.sessions.isEmpty) ...[
-                Text(
-                  '시간 또는 장소가 불명확해요. 아래에서 직접 골라 주세요.',
-                  style: TextStyle(color: muted),
-                ),
-                SizedBox(height: 12),
-              ],
-              TextField(
-                controller: venueController,
-                decoration: InputDecoration(
-                  labelText: '장소',
-                  prefixIcon: Icon(Icons.place_outlined),
-                ),
-              ),
-              SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () => _editSchedule(ambiguous: event.sessions.isEmpty && startsAt == null),
-                icon: Icon(Icons.schedule),
-                label: Text(startsAt == null ? '날짜와 시간 선택' : _date(startsAt!)),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: Size.fromHeight(52),
-                  foregroundColor: accent,
-                ),
-              ),
-              if (startsAt != null) ...[
-                SizedBox(height: 7),
-                Text(
-                  '종료: ${_date(endsAt!)} · 필요하면 캘린더에서 수정할 수 있어요.',
-                  style: TextStyle(color: muted, fontSize: 12),
-                ),
-              ],
-            ],
-          ),
-        ),
-        SizedBox(height: 14),
-        _card(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _eyebrow('03  알림'),
-              SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  for (final option in [15, 60, 1440, -1])
-                    ChoiceChip(
-                      label: Text(_reminderLabel(option)),
-                      selected: reminderMinutes == option,
-                      onSelected: (_) =>
-                          setState(() => reminderMinutes = option),
-                    ),
-                ],
-              ),
-              Divider(color: borderColor, height: 28),
-              // 신청 마감일·참가비는 안내문에 없는 경우가 많아 기본으로 접어 둔다.
-              InkWell(
-                onTap: () => setState(() => showUnknownInputs = !showUnknownInputs),
-                child: Row(
-                  children: [
-                    Icon(Icons.post_add_outlined, size: 20, color: muted),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        [
-                          if (deadlineController.text.trim().isNotEmpty) '마감 ${deadlineController.text.trim()}',
-                          if (feeController.text.trim().isNotEmpty) feeController.text.trim(),
-                        ].join(' · ').ifEmpty('신청 마감일·참가비 추가 (선택)'),
-                        style: TextStyle(color: muted, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    Icon(showUnknownInputs ? Icons.expand_less : Icons.expand_more, color: muted),
-                  ],
-                ),
-              ),
-              if (showUnknownInputs) ...[
-                SizedBox(height: 12),
-                TextField(
-                  controller: deadlineController,
-                  decoration: InputDecoration(labelText: '신청 마감일 (YYYY-MM-DD)'),
-                  keyboardType: TextInputType.datetime,
-                  onChanged: (_) => setState(() {}),
-                ),
-                SizedBox(height: 8),
-                TextField(
-                  controller: feeController,
-                  decoration: InputDecoration(labelText: '참가비 (예: 무료, 10,000원)'),
-                  onChanged: (_) => setState(() {}),
-                ),
-              ],
-            ],
-          ),
-        ),
-        SizedBox(height: 18),
-        _button(
-          saving ? '캘린더에 저장하는 중...' : '확인하고 캘린더에 저장',
-          Icons.event_available_outlined,
-          saving ? null : _save,
-        ),
-        SizedBox(height: 10),
-        Center(
-          child: fromRecommendation
-              ? TextButton(
-                  onPressed: () {
-                    _reset();
-                    setState(() => tab = 2);
-                  },
-                  child: Text('추천으로 돌아가기'),
-                )
-              : TextButton(onPressed: _reset, child: Text('다시 스캔하기')),
-        ),
+        ]),
+        SizedBox(height: 8),
+        Center(child: TextButton(
+          onPressed: () {
+            final back = fromRecommendation;
+            _reset();
+            if (back) _selectTab(2);
+          },
+          child: Text(fromRecommendation ? '추천으로 돌아가기' : '분석 취소'),
+        )),
       ],
     );
+  }
+
+  Widget _reviewTitlePage(CueEvent event) => _card(Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        width: 54, height: 54,
+        decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(18)),
+        child: Icon(Icons.celebration_rounded, color: accent),
+      ),
+      SizedBox(height: 18),
+      TextField(
+        controller: titleController,
+        maxLength: 120,
+        autofocus: false,
+        decoration: InputDecoration(labelText: '행사 이름', hintText: '포스터에 적힌 행사 이름'),
+      ),
+      if (event.description.isNotEmpty) ...[
+        SizedBox(height: 8),
+        Text(event.description, maxLines: 3, overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: muted, height: 1.5)),
+      ],
+    ],
+  ));
+
+  Widget _reviewCategoryPage() => _card(Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text('가장 가까운 종류를 선택하세요',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: ink)),
+      SizedBox(height: 4),
+      Text('선택한 종류는 추천 정확도에 반영돼요.', style: TextStyle(color: muted, fontSize: 13)),
+      SizedBox(height: 18),
+      for (final group in cueCategoryGroups.entries) ...[
+        Text(group.key, style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w800)),
+        SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final value in group.value) ChoiceChip(
+            label: Text(value),
+            selected: selectedCategory == value,
+            showCheckmark: false,
+            avatar: selectedCategory == value ? Icon(Icons.check_rounded, size: 16, color: accent) : null,
+            onSelected: (_) => setState(() => selectedCategory = value),
+          )],
+        ),
+        SizedBox(height: 15),
+      ],
+    ],
+  ));
+
+  Widget _reviewSchedulePage(CueEvent event) => _card(Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (event.sessions.length > 1) ...[
+        Text('참석할 일정 하나를 선택하세요',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: ink)),
+        SizedBox(height: 12),
+        for (var i = 0; i < event.sessions.length; i++) _sessionChoice(i, event.sessions[i]),
+        SizedBox(height: 8),
+      ],
+      TextField(
+        controller: venueController,
+        decoration: InputDecoration(labelText: '장소', prefixIcon: Icon(Icons.place_outlined)),
+      ),
+      SizedBox(height: 12),
+      OutlinedButton.icon(
+        onPressed: () => _editSchedule(ambiguous: event.sessions.isEmpty && startsAt == null),
+        icon: Icon(Icons.schedule_rounded),
+        label: Text(startsAt == null ? '날짜와 시간 선택' : _date(startsAt!)),
+        style: OutlinedButton.styleFrom(minimumSize: Size.fromHeight(54), foregroundColor: accent),
+      ),
+      if (startsAt != null) ...[
+        SizedBox(height: 8),
+        Text('종료 ${_date(endsAt!)}', style: TextStyle(color: muted, fontSize: 13)),
+      ],
+    ],
+  ));
+
+  Widget _reviewReminderPage() => _card(Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text('언제 알려드릴까요?',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: ink)),
+      SizedBox(height: 14),
+      for (final option in [15, 60, 1440, -1]) Padding(
+        padding: EdgeInsets.only(bottom: 9),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => setState(() => reminderMinutes = option),
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 15, vertical: 14),
+            decoration: BoxDecoration(
+              color: reminderMinutes == option ? mint : paper,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: reminderMinutes == option ? accent : borderColor),
+            ),
+            child: Row(children: [
+              Icon(reminderMinutes == option ? Icons.radio_button_checked : Icons.radio_button_off,
+                  color: reminderMinutes == option ? accent : muted),
+              SizedBox(width: 11),
+              Text(_reminderLabel(option), style: TextStyle(color: ink, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        ),
+      ),
+      Divider(color: borderColor, height: 28),
+      InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => setState(() => showUnknownInputs = !showUnknownInputs),
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Row(children: [
+            Icon(Icons.tune_rounded, color: accent),
+            SizedBox(width: 10),
+            Expanded(child: Text('신청 마감일·참가비', style: TextStyle(color: ink, fontWeight: FontWeight.w700))),
+            Icon(showUnknownInputs ? Icons.expand_less : Icons.expand_more, color: muted),
+          ]),
+        ),
+      ),
+      if (showUnknownInputs) ...[
+        SizedBox(height: 12),
+        TextField(controller: deadlineController,
+            decoration: InputDecoration(labelText: '신청 마감일 (YYYY-MM-DD)'), keyboardType: TextInputType.datetime),
+        SizedBox(height: 9),
+        TextField(controller: feeController, decoration: InputDecoration(labelText: '참가비')),
+      ],
+    ],
+  ));
+
+  void _setReviewStep(int value) => setState(() {
+    reviewDirection = value > reviewStep ? 1 : -1;
+    reviewStep = value.clamp(0, 3);
+  });
+
+  void _nextReviewStep() {
+    if (reviewStep == 0 && titleController.text.trim().isEmpty) {
+      _message('행사 이름을 확인해 주세요.');
+      return;
+    }
+    if (reviewStep == 2) {
+      if (candidate!.sessions.length > 1 && selectedSession == null) {
+        _message('참석할 시간과 장소를 선택해 주세요.');
+        return;
+      }
+      if (venueController.text.trim().isEmpty || startsAt == null || endsAt == null) {
+        _message('장소와 시간을 확인해 주세요.');
+        return;
+      }
+    }
+    _setReviewStep(reviewStep + 1);
   }
 
   Future<void> _chooseSession() async {
@@ -1974,6 +2063,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             _button('이날 동선 보기', Icons.route_outlined, () {
               _reset();
               setState(() {
+                tabDirection = 1;
                 tab = 1;
                 routeView = true;
                 routeFocusDate = day.date;
@@ -1986,7 +2076,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             child: TextButton(
               onPressed: () {
                 _reset();
-                if (backToRecommendations) setState(() => tab = 2);
+                if (backToRecommendations) _selectTab(2);
               },
               child: Text(backToRecommendations ? '추천 더 보기' : '다른 행사 스캔하기'),
             ),
@@ -2567,7 +2657,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       selectedSession = 0;
       _applySession(0);
       stage = ScanStage.review;
+      reviewStep = 0;
       fromRecommendation = true;
+      tabDirection = -1;
       tab = 0;
     });
   }
@@ -2728,8 +2820,4 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ),
   );
   String _date(DateTime value) => '${_dateOnly(value)} ${_timeOnly(value)}';
-}
-
-extension on String {
-  String ifEmpty(String other) => isEmpty ? other : this;
 }
