@@ -124,6 +124,49 @@ class _SavedEventEditorState extends State<SavedEventEditor> {
     _ => '알림 없음',
   };
 
+  Future<void> _chooseCategory() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (sheetContext) => SafeArea(child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.72,
+        maxChildSize: 0.92,
+        builder: (_, controller) => ListView(
+          controller: controller,
+          padding: EdgeInsets.fromLTRB(20, 12, 20, 28),
+          children: [
+            Center(child: Container(width: 38, height: 4,
+                decoration: BoxDecoration(color: Theme.of(context).dividerColor,
+                    borderRadius: BorderRadius.circular(20)))),
+            SizedBox(height: 22),
+            Text('행사 종류 선택', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+            SizedBox(height: 5),
+            Text('가장 가까운 한 가지를 골라 주세요.', style: Theme.of(context).textTheme.bodyMedium),
+            SizedBox(height: 22),
+            for (final group in cueCategoryGroups.entries) ...[
+              Text(group.key, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800,
+                  color: Theme.of(context).colorScheme.primary)),
+              SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final item in group.value) ChoiceChip(
+                  label: Text(item),
+                  selected: category == item,
+                  showCheckmark: false,
+                  onSelected: (_) => Navigator.pop(sheetContext, item),
+                ),
+              ]),
+              SizedBox(height: 18),
+            ],
+          ],
+        ),
+      )),
+    );
+    if (picked != null && mounted) setState(() => category = picked);
+  }
+
   void _submit() {
     if (title.text.trim().isEmpty || venue.text.trim().isEmpty) {
       ScaffoldMessenger.of(
@@ -174,15 +217,21 @@ class _SavedEventEditorState extends State<SavedEventEditor> {
             decoration: InputDecoration(labelText: '장소'),
           ),
           SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            initialValue: category,
-            decoration: InputDecoration(labelText: '행사 종류'),
-            items: categories
-                .map((item) => DropdownMenuItem(value: item, child: Text(item)))
-                .toList(),
-            onChanged: (value) {
-              if (value != null) setState(() => category = value);
-            },
+          OutlinedButton(
+            onPressed: _chooseCategory,
+            style: OutlinedButton.styleFrom(
+              minimumSize: Size.fromHeight(56),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            child: Row(children: [
+              Icon(Icons.category_outlined),
+              SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('행사 종류', style: TextStyle(fontSize: 12)),
+                Text(category, style: TextStyle(fontWeight: FontWeight.w800)),
+              ])),
+              Icon(Icons.keyboard_arrow_down_rounded),
+            ]),
           ),
           SizedBox(height: 20),
           OutlinedButton.icon(

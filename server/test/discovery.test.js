@@ -55,3 +55,12 @@ test('saved stage shows build a performance interest that matches theatre recomm
   assert.equal(results.length, 1);
   assert.equal(discoveryTopics(new Map([['domain:공연', 4]]))[0].topic, '공연');
 });
+
+test('specific title words override a noisy AI category and tags', () => {
+  const result = classifyEvent({
+    title: '성남동 커피페스티벌', category: '음악', domains: ['음악'],
+    tags: ['버스킹', '라이브 공연'], description: '커피 체험과 음악 공연',
+  });
+  assert.equal(result.category, '커피·와인');
+  assert.deepEqual(result.domains, ['음식']);
+});
