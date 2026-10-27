@@ -17,6 +17,8 @@ test('analysis stops after rejection and approved interests drive recommendation
   const { server } = await import('../src/server.js');
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
+  // Supabase를 설정하지 않은 로컬 테스트에서는 데이터베이스 확인을 건너뛴다고 알려야 한다.
+  assert.deepEqual(await (await fetch(`${base}/health/deep`)).json(), { ok: true, database: 'not_configured' });
   const realFetch = globalThis.fetch;
   const answers = [];
   const aiInputs = [];

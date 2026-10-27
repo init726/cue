@@ -1,6 +1,6 @@
 import { categories, categoryGroup } from './categories.js';
 import { validateSavedEvent } from './domain.js';
-import { formats, domains } from './classification.js';
+import { formats, domains, titleCategory } from './classification.js';
 import { discoverSemaExhibitions } from './sema.js';
 import { discoverKopisPerformances } from './kopis.js';
 
@@ -77,7 +77,8 @@ export function verifiedDiscoveries(response, currentTime = Date.now()) {
         start > currentTime + maxDiscoveryAge || end <= start ||
         !String(item.title || '').trim() || !String(item.venue || '').trim()) return [];
     try {
-      const event = validateSavedEvent({ ...item, sourceUrl });
+      // 웹 검색 결과의 종류도 AI가 정한 것이라 제목 핵심어로 바로잡는다.
+      const event = validateSavedEvent({ ...item, category: titleCategory(item.title) || item.category, sourceUrl });
       seen.add(sourceUrl);
       return [event];
     } catch { return []; }

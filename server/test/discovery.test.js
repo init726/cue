@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { discoveryTopic, discoveryTopics, verifiedDiscoveries } from '../src/discovery.js';
 import { classifyEvent } from '../src/classification.js';
+import { cleanExtraction, validateSavedEvent } from '../src/domain.js';
 import { rankRecommendations } from '../src/personalization.js';
 
 const currentTime = Date.parse('2026-09-20T00:00:00+09:00');
@@ -61,6 +62,21 @@ test('specific title words override a noisy AI category and tags', () => {
     title: '성남동 커피페스티벌', category: '음악', domains: ['음악'],
     tags: ['버스킹', '라이브 공연'], description: '커피 체험과 음악 공연',
   });
-  assert.equal(result.category, '커피·와인');
   assert.deepEqual(result.domains, ['음식']);
+  const extracted = cleanExtraction({ is_event: true, title: '성남동 커피페스티벌', category: '음악',
+    tags: ['버스킹'], domains: ['음악'], sessions: [] });
+  assert.equal(extracted.category, '커피·와인');
+});
+
+test('saved categories and official domains are kept as given', () => {
+  const base = { venue: '서울', startsAt: '2026-11-08T14:00:00+09:00', endsAt: '2026-11-08T16:00:00+09:00' };
+  // 사용자가 확인 화면에서 고친 종류는 제목 규칙으로 바뀌지 않는다.
+  assert.equal(validateSavedEvent({ ...base, title: '성남동 커피페스티벌', category: '음악' }).category, '음악');
+  // 목록에 없는 종류는 여전히 기타로 저장된다.
+  assert.equal(validateSavedEvent({ ...base, title: '동네 모임', category: '아무말' }).category, '기타');
+  // 제목의 일반 단어(공연·예술)는 공식 출처가 정한 분야를 덮어쓰지 않는다.
+  assert.deepEqual(validateSavedEvent({ ...base, title: '베토벤 교향곡 전곡 공연', category: '클래식',
+    domains: ['음악', '문화'] }).domains, ['음악', '문화']);
+  assert.deepEqual(validateSavedEvent({ ...base, title: '예술의전당 AI 세미나', category: '강연',
+    domains: ['AI'] }).domains, ['AI']);
 });

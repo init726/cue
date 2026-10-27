@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { categories, cleanExtraction, validateSavedEvent } from './domain.js';
 import { documentInput } from './document.js';
 import { store } from './store.js';
-import { CloudStore, importCloudCatalog } from './cloud-store.js';
+import { CloudStore, importCloudCatalog, pingCloud } from './cloud-store.js';
 import { discoverCatalogEvents, discoveryTopics } from './discovery.js';
 import { formats, domains } from './classification.js';
 import { demoEvents, demoEventCount, isDemoEvent } from './demo-catalog.js';
@@ -217,6 +217,12 @@ export const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && route === '/health') return send(res, 200, { ok: true });
     const ip = req.socket.remoteAddress || 'unknown';
+    // 데이터베이스까지 확인한다. 예약 작업이 며칠마다 호출해 Supabase가 일시 정지되지 않게 한다.
+    if (req.method === 'GET' && route === '/health/deep') {
+      if (!allowed(`deep-health:${ip}`, 12, 60 * 60 * 1000)) return send(res, 429, { error: '요청이 너무 많아요.' });
+      const database = await pingCloud();
+      return send(res, database === 'error' ? 503 : 200, { ok: database !== 'error', database });
+    }
 
     if (req.method === 'POST' && route === '/v1/session') {
       if (!allowed(`session:${ip}`, 20, 60 * 60 * 1000)) return send(res, 429, { error: '요청이 너무 많아요.' });
