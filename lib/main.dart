@@ -13,6 +13,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'cue_api.dart';
+import 'cue_event_identity.dart';
 import 'cue_categories.dart';
 import 'cue_route.dart';
 import 'cue_splash.dart';
@@ -2553,39 +2554,26 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _tag(event['category'] as String? ?? '기타'),
-          if (recommended) ...[
-            SizedBox(height: 8),
-            _tag(switch (event['originKind']) {
-              'shared' => '사용자가 공유한 행사 · 실험',
-              'web' => '웹에서 찾은 행사',
-              'demo' => '시연용 예시 행사',
-              _ => '등록된 행사',
-            }),
-          ],
-          SizedBox(height: 11),
-          Text(
-            event['title'] as String? ?? '',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: ink,
-            ),
+          CueEventIdentity(
+            title: event['title'] as String? ?? '',
+            venue: event['venue'] as String? ?? '',
+            category: event['category'] as String? ?? '기타',
+            startsAt: date,
+            sourceKind: recommended ? event['originKind'] as String? ?? 'catalog' : null,
+            participationFee: event['participationFee'] as String?,
           ),
-          SizedBox(height: 10),
-          if (date != null) _detail(Icons.schedule, _date(date)),
-          _detail(Icons.place_outlined, event['venue'] as String? ?? ''),
-          if (recommended && event['reason'] is String) ...[
+          if (recommended && event['reason'] is String && (event['reason'] as String).trim().isNotEmpty) ...[
             SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.auto_awesome, size: 15, color: accent),
+                Icon(event['originKind'] == 'shared' ? Icons.people_outline : Icons.auto_awesome,
+                    size: 15, color: muted),
                 SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     event['reason'] as String,
-                    style: TextStyle(color: accent, fontSize: 13, fontWeight: FontWeight.w600),
+                    style: TextStyle(color: muted, fontSize: 12, height: 1.5),
                   ),
                 ),
               ],
@@ -2661,22 +2649,25 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                       : () => _feedback(event, 'interested'),
                   icon: Icon(interested ? Icons.favorite : Icons.favorite_border, color: accent),
                 ),
-                IconButton(
-                  tooltip: '관심 없음',
-                  onPressed: () => _dismissRecommendation(event),
-                  icon: Icon(Icons.not_interested_outlined, color: muted),
-                ),
-                if (sourceUrl != null)
-                  IconButton(
-                    tooltip: '공식 안내',
-                    onPressed: () async {
+                PopupMenuButton<String>(
+                  tooltip: '행사 더보기',
+                  icon: Icon(Icons.more_horiz, color: muted),
+                  onSelected: (value) async {
+                    if (value == 'dismiss') {
+                      await _dismissRecommendation(event);
+                    } else if (value == 'source' && sourceUrl != null) {
                       final url = Uri.tryParse(sourceUrl);
                       if (url == null || !await launchUrl(url, mode: LaunchMode.externalApplication)) {
-                        _message('공식 안내 페이지를 열 수 없어요.');
+                        _message('원 안내 페이지를 열 수 없어요.');
                       }
-                    },
-                    icon: Icon(Icons.open_in_new, color: muted),
-                  ),
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(value: 'dismiss', child: Text('관심 없음')),
+                    if (sourceUrl != null)
+                      PopupMenuItem(value: 'source', child: Text('원 안내 보기')),
+                  ],
+                ),
               ],
             ),
         ],
