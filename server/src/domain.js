@@ -8,6 +8,7 @@ const invalid = (message) => Object.assign(new Error(message), { status: 400 });
 
 // 안내문 날짜 표기가 월·일을 실제로 담고 있는지 본다(예: 11.7(토), 10월 9일, 2026-10-09). "2일간", "추후 공지"는 날짜가 아니다.
 const hasCalendarDate = (text) => /(?<!\d)\d{1,2}\s*월\s*\d{1,2}|(?<!\d)\d{1,2}\s*[./-]\s*\d{1,2}(?!\d)|\d{4}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{1,2}/.test(text);
+const hasClockTime = (text) => /(?:오전|오후)\s*\d{1,2}(?::\d{2})?\s*시?|(?<!\d)(?:[01]?\d|2[0-3])\s*:\s*[0-5]\d(?!\d)|(?<!\d)\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?/.test(text);
 
 // "서울 건국대학교, 대전 KT인재개발원"처럼 장소 여러 곳이 한 줄로 합쳐진 항목은 장소마다 후보로 나눈다.
 // 층·호수 같은 세부 위치(코엑스, 3층 A홀)는 나누지 않도록 각 조각이 충분히 길고 숫자로 시작하지 않을 때만 쪼갠다.
@@ -45,9 +46,12 @@ export function cleanExtraction(raw) {
       endsAt: String(item.ends_at || '').trim(),
       venue: String(item.venue || '').trim().slice(0, 160),
       dateText: typeof item.date_text === 'string' ? item.date_text.trim() : null,
+      timeText: typeof item.time_text === 'string' ? item.time_text.trim() : null,
     }))
     // 안내문에 날짜가 적혀 있지 않은데 AI가 채운 일정은 버려 사용자가 직접 고르게 한다.
     .filter((item) => item.dateText === null || hasCalendarDate(item.dateText))
+    // 00:00은 안내문에 실제 표기된 자정일 때만 통과한다. 시간 미표기 일정은 사용자에게 다시 묻는다.
+    .filter((item) => item.timeText === null || hasClockTime(item.timeText))
     .filter((item) => {
       const start = Date.parse(item.startsAt);
       const end = Date.parse(item.endsAt);
@@ -55,8 +59,14 @@ export function cleanExtraction(raw) {
     });
   const sessions = mergeContiguousSessions(rawSessions.flatMap(splitVenues));
   const classification = classifyEvent({ ...raw, title, category, tags });
+  const timeMode = sessions.length === 0 ? 'unknown'
+    : ['fixed', 'multiple', 'flexible'].includes(raw.time_mode)
+      ? raw.time_mode : sessions.length > 1 ? 'multiple' : 'fixed';
+  const recommendedArrivalMinutes = [0, 15, 30, 60].includes(Number(raw.recommended_arrival_minutes))
+    ? Number(raw.recommended_arrival_minutes) : 15;
   return {
     id: randomUUID(), title, category, tags, ...classification,
+    timeMode, recommendedArrivalMinutes,
     description: String(raw.description || '').trim().slice(0, 500),
     applicationDeadline: typeof raw.application_deadline === 'string' &&
       hasTimezone(raw.application_deadline) && Number.isFinite(Date.parse(raw.application_deadline))
@@ -66,6 +76,7 @@ export function cleanExtraction(raw) {
       applicationDeadline: typeof raw.application_deadline === 'string' &&
         hasTimezone(raw.application_deadline) && Number.isFinite(Date.parse(raw.application_deadline)) ? 'known' : 'unknown',
       participationFee: raw.participation_fee ? 'known' : 'unknown',
+      time: sessions.length ? 'known' : 'unknown',
     },
     sessions,
     needsManualDetails: sessions.length === 0,

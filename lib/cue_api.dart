@@ -19,17 +19,22 @@ class CueSession {
     required this.startsAt,
     required this.endsAt,
     required this.venue,
+    this.timeText = '',
   });
   final String label;
   final DateTime startsAt;
   final DateTime endsAt;
   final String venue;
 
+  /// 안내문에 실제로 인쇄된 시간. 비어 있으면 00:00을 포함한 API 시각을 신뢰하지 않는다.
+  final String timeText;
+
   factory CueSession.fromJson(Map<String, dynamic> json) => CueSession(
     label: json['label'] as String? ?? '',
     startsAt: DateTime.parse(json['startsAt'] as String).toLocal(),
     endsAt: DateTime.parse(json['endsAt'] as String).toLocal(),
     venue: json['venue'] as String? ?? '',
+    timeText: json['timeText'] as String? ?? '',
   );
 }
 
@@ -44,6 +49,8 @@ class CueEvent {
     this.domains = const [],
     this.applicationDeadline,
     this.participationFee,
+    this.timeMode = 'unknown',
+    this.recommendedArrivalMinutes = 15,
   });
   final String title;
   final String category;
@@ -55,15 +62,24 @@ class CueEvent {
   final String? applicationDeadline;
   final String? participationFee;
 
+  /// fixed, multiple, flexible, unknown 중 하나다.
+  final String timeMode;
+  final int recommendedArrivalMinutes;
+
   factory CueEvent.fromJson(Map<String, dynamic> json) => CueEvent(
     title: json['title'] as String? ?? '',
     category: json['category'] as String? ?? '기타',
     description: json['description'] as String? ?? '',
     tags: (json['tags'] as List<dynamic>? ?? []).whereType<String>().toList(),
     format: json['format'] as String? ?? '기타',
-    domains: (json['domains'] as List<dynamic>? ?? []).whereType<String>().toList(),
+    domains: (json['domains'] as List<dynamic>? ?? [])
+        .whereType<String>()
+        .toList(),
     applicationDeadline: json['applicationDeadline'] as String?,
     participationFee: json['participationFee'] as String?,
+    timeMode: json['timeMode'] as String? ?? 'unknown',
+    recommendedArrivalMinutes:
+        (json['recommendedArrivalMinutes'] as num?)?.toInt() ?? 15,
     sessions: (json['sessions'] as List<dynamic>? ?? [])
         .map((e) => CueSession.fromJson(e as Map<String, dynamic>))
         .toList(),
@@ -152,7 +168,9 @@ class CueApi {
     } on TimeoutException {
       throw const CueApiException('서버 응답이 늦어요. 잠시 후 다시 시도해 주세요.');
     } on SocketException {
-      throw const CueApiException('서버에 연결할 수 없어요. 인터넷 연결을 확인하고 잠시 후 다시 시도해 주세요.');
+      throw const CueApiException(
+        '서버에 연결할 수 없어요. 인터넷 연결을 확인하고 잠시 후 다시 시도해 주세요.',
+      );
     } on FormatException {
       throw const CueApiException('서버 응답을 읽을 수 없어요.');
     }

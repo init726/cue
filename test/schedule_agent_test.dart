@@ -76,4 +76,20 @@ void main() {
     expect(cueVenueNeedsContext('한국대학교 본관 3층 시청각실'), isFalse);
     expect(cueVenueNeedsContext('서울 코엑스 A홀'), isFalse);
   });
+
+  test('이동 시간과 도착 여유를 포함해 배치 가능성을 판단한다', () {
+    final previous = item('수업', '2026-11-01 10:00', '2026-11-01 11:00');
+    final next = item('약속', '2026-11-01 14:00', '2026-11-01 15:00');
+    final impossible = cueAssessPlacement(
+      start: DateTime(2026, 11, 1, 11, 30),
+      end: DateTime(2026, 11, 1, 13, 30),
+      previous: previous,
+      next: next,
+      travelFromPreviousMinutes: 25,
+      travelToNextMinutes: 40,
+      arrivalBufferMinutes: 15,
+    );
+    expect(impossible.canArrive, isFalse);
+    expect(impossible.canReachNext, isFalse);
+  });
 }

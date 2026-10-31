@@ -21,6 +21,44 @@ class CueTimeSlot {
   final DateTime end;
 }
 
+class CuePlacementAssessment {
+  const CuePlacementAssessment({
+    required this.canArrive,
+    required this.canReachNext,
+    required this.arrivalAt,
+    required this.leaveBy,
+  });
+
+  final bool canArrive;
+  final bool canReachNext;
+  final DateTime? arrivalAt;
+  final DateTime? leaveBy;
+  bool get isFeasible => canArrive && canReachNext;
+}
+
+/// 앞 일정 종료 뒤 이동하고 권장 도착 여유까지 확보되는지, 다음 일정까지 갈 수 있는지 계산한다.
+/// 이동시간은 MapKit 등 외부 경로 계산 결과를 주입하며 AI가 임의로 만들지 않는다.
+CuePlacementAssessment cueAssessPlacement({
+  required DateTime start,
+  required DateTime end,
+  CueScheduleItem? previous,
+  CueScheduleItem? next,
+  int travelFromPreviousMinutes = 0,
+  int travelToNextMinutes = 0,
+  int arrivalBufferMinutes = 0,
+}) {
+  final arrivalAt = previous?.end.add(
+    Duration(minutes: travelFromPreviousMinutes + arrivalBufferMinutes),
+  );
+  final leaveBy = next?.start.subtract(Duration(minutes: travelToNextMinutes));
+  return CuePlacementAssessment(
+    canArrive: arrivalAt == null || !arrivalAt.isAfter(start),
+    canReachNext: leaveBy == null || !end.isAfter(leaveBy),
+    arrivalAt: arrivalAt,
+    leaveBy: leaveBy,
+  );
+}
+
 String _plain(String value) =>
     value.toLowerCase().replaceAll(RegExp(r'[^0-9a-zㄱ-ㆎ가-힣]'), '');
 

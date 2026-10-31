@@ -30,6 +30,17 @@ test('analysis separates event form, topic, and unknown details', () => {
   assert.equal(event.applicationDeadline, null);
 });
 
+test('midnight is accepted only when the flyer actually prints midnight', () => {
+  const build = (timeText) => cleanExtraction({
+    is_event: true, title: '야간 행사', category: '기타', description: '', time_mode: 'fixed',
+    sessions: [{ label: '', starts_at: '2026-11-07T00:00:00+09:00', ends_at: '2026-11-07T02:00:00+09:00',
+      venue: '운동장', date_text: '11.7(토)', time_text: timeText }],
+  });
+  assert.equal(build('').sessions.length, 0);
+  assert.equal(build('').timeMode, 'unknown');
+  assert.equal(build('00:00~02:00').sessions.length, 1);
+});
+
 test('recommendations require a saved interest and a future matching event', () => {
   const catalog = [
     { title: '전시 A', category: '전시', startsAt: '2027-01-02T00:00:00Z', endsAt: '2027-01-03T00:00:00Z' },

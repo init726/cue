@@ -18,6 +18,7 @@ import 'cue_categories.dart';
 import 'cue_route.dart';
 import 'cue_schedule_agent.dart';
 import 'cue_splash.dart';
+import 'cue_travel_estimator.dart';
 import 'saved_event_editor.dart';
 
 const ink = Color(0xFF181A1D);
@@ -103,7 +104,6 @@ ThemeData cueTheme(Brightness brightness) {
     ),
   );
 }
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (useSupabaseAuth) {
@@ -182,6 +182,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   final api = CueApi(cueApiUrl);
   final picker = ImagePicker();
   final calendarPlugin = calendar.DeviceCalendarPlugin();
+  final travelEstimator = CueTravelEstimator();
   final titleController = TextEditingController();
   final venueController = TextEditingController();
   final deadlineController = TextEditingController();
@@ -204,6 +205,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   int? recommendationSeed;
   DateTime? startsAt;
   DateTime? endsAt;
+  String? routePlanNote;
   int reminderMinutes = 60;
   int defaultReminderMinutes = 60;
   int defaultDurationMinutes = 120;
@@ -931,11 +933,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     DateTime newStart,
     DateTime newEnd,
   ) async {
-    final newSlots = cueNearestFreeSlots(
-      newStart,
-      newEnd,
-      all.map((row) => row.item).toList(),
-    );
+    final newSlots = candidate?.timeMode == 'flexible'
+        ? cueNearestFreeSlots(newStart, newEnd, all.map((row) => row.item).toList())
+        : const <CueTimeSlot>[];
     final alternateSessions = <MapEntry<int, CueSession>>[
       for (final entry in (candidate?.sessions ?? const <CueSession>[]).asMap().entries)
         if (entry.key != selectedSession &&
@@ -945,18 +945,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     ];
     final movable = conflicts.length == 1 ? conflicts.single.savedEvent : null;
     final existing = movable == null ? null : _savedSchedule(movable);
-    final existingSlots = existing == null
-        ? const <CueTimeSlot>[]
-        : cueNearestFreeSlots(
-            existing.start,
-            existing.end,
-            [
-              for (final row in all)
-                if (row.item.id != conflicts.single.item.id) row.item,
-              CueScheduleItem(id: 'new', title: titleController.text, venue: venueController.text,
-                  start: newStart, end: newEnd),
-            ],
-          );
+    // 과거 저장 데이터에는 고정/자유 방문 여부가 없으므로 기존 행사를 임의로 옮기지 않는다.
+    final existingSlots = const <CueTimeSlot>[];
     if (!mounted) return null;
     return showModalBottomSheet<_ScheduleChoice>(
       context: context,
@@ -1127,7 +1117,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     }
     if (!checkScheduleConflicts) return true;
     final conflicts = rows.where((row) => cueSchedulesOverlap(start, end, row.item)).toList();
-    if (conflicts.isEmpty) return true;
+    if (conflicts.isEmpty) return _reviewTravelFeasibility(rows, title, venue, start, end);
     final choice = await _chooseConflictRoute(rows, conflicts, start, end);
     if (choice == null) return false;
     if (choice.action == 'keep') return true;
@@ -1157,6 +1147,93 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     return false;
   }
 
+  Future<bool> _reviewTravelFeasibility(
+    List<_CalendarSchedule> rows, String title, String venue, DateTime start, DateTime end,
+  ) async {
+    final before = rows.where((row) => !row.item.end.isAfter(start)).toList()
+      ..sort((a, b) => b.item.end.compareTo(a.item.end));
+    final after = rows.where((row) => !row.item.start.isBefore(end)).toList()
+      ..sort((a, b) => a.item.start.compareTo(b.item.start));
+    final previous = before.firstOrNull?.item;
+    final next = after.firstOrNull?.item;
+    final fromPrevious = previous == null ? null : await travelEstimator.estimate(
+      from: previous.venue, to: venue, departureAt: previous.end,
+    );
+    final toNext = next == null ? null : await travelEstimator.estimate(
+      from: venue, to: next.venue, departureAt: end,
+    );
+    final arrivalBuffer = candidate?.recommendedArrivalMinutes ?? 15;
+    final assessment = cueAssessPlacement(
+      start: start, end: end,
+      previous: fromPrevious == null ? null : previous,
+      next: toNext == null ? null : next,
+      travelFromPreviousMinutes: fromPrevious?.minutes ?? 0,
+      travelToNextMinutes: toNext?.minutes ?? 0,
+      arrivalBufferMinutes: arrivalBuffer,
+    );
+    final pieces = <String>[];
+    if (previous != null && fromPrevious != null) {
+      final depart = start.subtract(Duration(minutes: fromPrevious.minutes + arrivalBuffer));
+      pieces.add('${previous.title}에서 약 ${fromPrevious.minutes}분 · ${_timeOnly(depart)}까지 출발');
+    } else if (arrivalBuffer > 0) {
+      pieces.add('행사 $arrivalBuffer분 전 도착 권장');
+    }
+    if (next != null && toNext != null) pieces.add('${next.title}까지 약 ${toNext.minutes}분');
+    routePlanNote = pieces.join('\n');
+    if (assessment.isFeasible) return true;
+    if (!mounted) return false;
+    final reason = !assessment.canArrive
+        ? '앞 일정이 끝난 뒤 이동하면 $arrivalBuffer분 전 도착하기 어려워요.'
+        : '행사가 끝난 뒤 다음 일정 장소까지 제시간에 가기 어려워요.';
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.route_outlined, color: accent, size: 32),
+            SizedBox(height: 12),
+            Text('이동까지 포함하면 일정이 빠듯해요', style: TextStyle(color: ink, fontSize: 20, fontWeight: FontWeight.w800)),
+            SizedBox(height: 7),
+            Text(reason, style: TextStyle(color: muted, height: 1.5)),
+            if (routePlanNote?.isNotEmpty == true) ...[
+              SizedBox(height: 12),
+              Text(routePlanNote!, style: TextStyle(color: ink, fontWeight: FontWeight.w700, height: 1.5)),
+            ],
+            SizedBox(height: 18),
+            if (candidate!.sessions.length > 1)
+              FilledButton(
+                onPressed: () => Navigator.pop(sheetContext, 'session'),
+                style: FilledButton.styleFrom(minimumSize: Size.fromHeight(50)),
+                child: Text('다른 회차 선택'),
+              ),
+            if (candidate!.timeMode == 'flexible')
+              OutlinedButton(
+                onPressed: () => Navigator.pop(sheetContext, 'edit'),
+                style: OutlinedButton.styleFrom(minimumSize: Size.fromHeight(48)),
+                child: Text('방문 시간 다시 정하기'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(sheetContext, 'keep'),
+              style: TextButton.styleFrom(minimumSize: Size.fromHeight(46)),
+              child: Text('그래도 이 시간으로 저장'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(sheetContext),
+              style: TextButton.styleFrom(minimumSize: Size.fromHeight(44)),
+              child: Text('돌아가기'),
+            ),
+          ]),
+        ),
+      ),
+    );
+    if (action == 'keep') return true;
+    if (action == 'session') unawaited(_chooseSession());
+    if (action == 'edit') unawaited(_editSchedule(forced: true));
+    return false;
+  }
+
   Future<void> _save() async {
     if (candidate == null) return;
     if (candidate!.sessions.length > 1 && selectedSession == null && startsAt == null) {
@@ -1172,6 +1249,15 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     }
     if (!endsAt!.isAfter(startsAt!)) {
       _message('종료 시간이 시작 시간보다 빨라요.');
+      return;
+    }
+    final selected = selectedSession == null || selectedSession! >= candidate!.sessions.length
+        ? null : candidate!.sessions[selectedSession!];
+    final printedMidnight = selected?.timeText.contains('00:00') == true ||
+        selected?.timeText.contains('0시') == true || selected?.timeText.contains('자정') == true;
+    if (startsAt!.hour == 0 && startsAt!.minute == 0 && !printedMidnight) {
+      _message('00:00은 확인된 자정 시간이 아니에요. 실제 시작 시간을 선택해 주세요.');
+      unawaited(_editSchedule(ambiguous: true, forced: true));
       return;
     }
     if (deadlineController.text.trim().isNotEmpty &&
@@ -1571,6 +1657,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       image = null;
       document = null;
       candidate = null;
+      routePlanNote = null;
       stage = ScanStage.idle;
       reviewStep = 0;
       selectedSession = null;
@@ -2562,6 +2649,19 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                   )),
                 ],
               ),
+            ),
+          ],
+          if (routePlanNote?.isNotEmpty == true) ...[
+            SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(14),
+              decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(14)),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(Icons.route_outlined, color: accent),
+                SizedBox(width: 10),
+                Expanded(child: Text(routePlanNote!, style: TextStyle(color: ink, height: 1.5))),
+              ]),
             ),
           ],
           SizedBox(height: 20),
