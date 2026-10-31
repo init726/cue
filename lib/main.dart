@@ -16,6 +16,7 @@ import 'cue_api.dart';
 import 'cue_event_identity.dart';
 import 'cue_categories.dart';
 import 'cue_route.dart';
+import 'cue_schedule_agent.dart';
 import 'cue_splash.dart';
 import 'saved_event_editor.dart';
 
@@ -132,6 +133,23 @@ class CueApp extends StatelessWidget {
 
 enum ScanStage { idle, processing, notEvent, pastEvent, review, saved }
 
+class _CalendarSchedule {
+  const _CalendarSchedule(this.item, this.event, this.savedEvent);
+
+  final CueScheduleItem item;
+  final calendar.Event event;
+  final Map<String, dynamic>? savedEvent;
+}
+
+class _ScheduleChoice {
+  const _ScheduleChoice(this.action, [this.slot, this.savedEvent, this.sessionIndex]);
+
+  final String action;
+  final CueTimeSlot? slot;
+  final Map<String, dynamic>? savedEvent;
+  final int? sessionIndex;
+}
+
 class CueDocument {
   CueDocument(this.path, this.name);
   final String path;
@@ -212,6 +230,10 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   String communityAgeBand = '';
   String recommendationSource = 'all';
   bool sharingEvent = false;
+  bool preventDuplicateEvents = true;
+  bool checkScheduleConflicts = true;
+  bool confirmLocalVenues = true;
+  bool venueConfirmed = false;
   int routeFocusRequest = 0;
   String? statusMessage;
   String? apiError;
@@ -298,6 +320,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     preferredCalendarId = prefs.getString('preferred_calendar_id');
     preferredCalendarName =
         prefs.getString('preferred_calendar_name') ?? '기기 기본 캘린더';
+    preventDuplicateEvents = prefs.getBool('prevent_duplicate_events') ?? true;
+    checkScheduleConflicts = prefs.getBool('check_schedule_conflicts') ?? true;
+    confirmLocalVenues = prefs.getBool('confirm_local_venues') ?? true;
     await minimum;
     if (!mounted) return;
     setState(() => loading = false);
@@ -504,6 +529,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         feeController.text = event.participationFee ?? '';
         showUnknownInputs = false;
         selectedSession = event.sessions.length == 1 ? 0 : null;
+        venueConfirmed = false;
         _applySession(selectedSession);
       });
     } catch (error) {
@@ -527,6 +553,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     startsAt = value.startsAt;
     endsAt = value.endsAt;
     venueController.text = value.venue;
+    venueConfirmed = false;
   }
 
   static const _weekdayNames = ['월', '화', '수', '목', '금', '토', '일'];
@@ -680,6 +707,63 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       endsAt = result.$2;
       venueController.text = result.$3;
       selectedSession = null;
+      venueConfirmed = false;
+    });
+    return true;
+  }
+
+  Future<bool> _confirmVenueContext() async {
+    if (!confirmLocalVenues || venueConfirmed || !cueVenueNeedsContext(venueController.text)) {
+      return true;
+    }
+    final field = TextEditingController(text: venueController.text);
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.of(sheetContext).viewInsets.bottom + 20),
+        child: SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('이 장소를 찾을 수 있게 적어주세요',
+                style: TextStyle(color: ink, fontSize: 20, fontWeight: FontWeight.w800)),
+            SizedBox(height: 7),
+            Text('Cue는 ‘본관’이나 ‘교내 강당’만으로는 어느 학교인지 알 수 없어요. '
+                '학교 또는 캠퍼스 이름과 건물·층·호실을 함께 적어주세요.',
+                style: TextStyle(color: muted, height: 1.5)),
+            SizedBox(height: 16),
+            TextField(
+              controller: field,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: '정확한 장소',
+                hintText: '예: 한국고등학교 본관 2층 시청각실',
+                prefixIcon: Icon(Icons.place_outlined),
+              ),
+            ),
+            SizedBox(height: 14),
+            FilledButton(
+              onPressed: () {
+                final value = field.text.trim();
+                if (value.isNotEmpty) Navigator.pop(sheetContext, value);
+              },
+              style: FilledButton.styleFrom(minimumSize: Size.fromHeight(52)),
+              child: Text('이 장소로 확인'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(sheetContext, venueController.text.trim()),
+              style: TextButton.styleFrom(minimumSize: Size.fromHeight(46)),
+              child: Text('장소를 알고 있어요 · 이대로 계속'),
+            ),
+          ]),
+        ),
+      ),
+    );
+    field.dispose();
+    if (result == null || !mounted) return false;
+    setState(() {
+      venueController.text = result;
+      venueConfirmed = true;
     });
     return true;
   }
@@ -736,6 +820,343 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     }
   }
 
+  CueScheduleItem? _savedSchedule(Map<String, dynamic> event) {
+    final start = DateTime.tryParse(event['startsAt'] as String? ?? '')?.toLocal();
+    final end = DateTime.tryParse(event['endsAt'] as String? ?? '')?.toLocal();
+    if (start == null || end == null || !end.isAfter(start)) return null;
+    return CueScheduleItem(
+      id: event['id'] as String? ?? '',
+      title: event['title'] as String? ?? '',
+      venue: event['venue'] as String? ?? '',
+      start: start,
+      end: end,
+    );
+  }
+
+  String _slotLabel(CueTimeSlot slot) =>
+      '${_dateOnly(slot.start)}  ${_timeOnly(slot.start)}–${_timeOnly(slot.end)}';
+
+  Future<List<_CalendarSchedule>> _readDaySchedules(
+    List<calendar.Calendar> calendars,
+    DateTime date,
+  ) async {
+    final dayStart = DateTime(date.year, date.month, date.day);
+    final dayEnd = dayStart.add(Duration(days: 1));
+    final rows = <_CalendarSchedule>[];
+    for (final source in calendars) {
+      if (source.id == null) continue;
+      final result = await calendarPlugin.retrieveEvents(
+        source.id,
+        calendar.RetrieveEventsParams(startDate: dayStart, endDate: dayEnd),
+      );
+      if (result.isSuccess != true) continue;
+      for (final event in result.data ?? const <calendar.Event>[]) {
+        if (event.allDay == true) continue;
+        final start = event.start?.toLocal();
+        final end = event.end?.toLocal();
+        if (start == null || end == null || !end.isAfter(start)) continue;
+        final linked = saved.where((item) =>
+            item['calendarId'] == event.calendarId &&
+            item['calendarEventId'] == event.eventId).firstOrNull;
+        rows.add(_CalendarSchedule(
+          CueScheduleItem(
+            id: event.eventId ?? '${event.calendarId}:${event.title}:$start',
+            title: event.title?.trim().isNotEmpty == true ? event.title!.trim() : '이름 없는 일정',
+            venue: event.location?.trim() ?? '',
+            start: start,
+            end: end,
+          ),
+          event,
+          linked,
+        ));
+      }
+    }
+    return rows;
+  }
+
+  Future<bool> _confirmCalendarDuplicate(_CalendarSchedule duplicate) async {
+    final linked = duplicate.savedEvent;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20, 0, 20, 18),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.content_copy_outlined, color: accent, size: 30),
+            SizedBox(height: 12),
+            Text('이미 캘린더에 있는 행사예요',
+                style: TextStyle(color: ink, fontSize: 20, fontWeight: FontWeight.w800)),
+            SizedBox(height: 7),
+            Text('${duplicate.item.title}\n${_slotLabel(CueTimeSlot(duplicate.item.start, duplicate.item.end))}'
+                '${duplicate.item.venue.isEmpty ? '' : '\n${duplicate.item.venue}'}',
+                style: TextStyle(color: muted, height: 1.5)),
+            SizedBox(height: 16),
+            if (linked != null)
+              FilledButton(
+                onPressed: () => Navigator.pop(sheetContext, 'existing'),
+                style: FilledButton.styleFrom(minimumSize: Size.fromHeight(50)),
+                child: Text('기존 일정 보기'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(sheetContext, 'again'),
+              style: TextButton.styleFrom(minimumSize: Size.fromHeight(48)),
+              child: Text('그래도 하나 더 저장'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(sheetContext, 'cancel'),
+              style: TextButton.styleFrom(minimumSize: Size.fromHeight(44)),
+              child: Text('취소'),
+            ),
+          ]),
+        ),
+      ),
+    );
+    if (action == 'existing' && mounted) {
+      setState(() {
+        tabDirection = 1;
+        tab = 1;
+        routeFocusDate = duplicate.item.start;
+        routeFocusRequest += 1;
+      });
+      _message('이미 저장한 일정으로 이동했어요.');
+      return false;
+    }
+    return action == 'again';
+  }
+
+  Future<_ScheduleChoice?> _chooseConflictRoute(
+    List<_CalendarSchedule> all,
+    List<_CalendarSchedule> conflicts,
+    DateTime newStart,
+    DateTime newEnd,
+  ) async {
+    final newSlots = cueNearestFreeSlots(
+      newStart,
+      newEnd,
+      all.map((row) => row.item).toList(),
+    );
+    final alternateSessions = <MapEntry<int, CueSession>>[
+      for (final entry in (candidate?.sessions ?? const <CueSession>[]).asMap().entries)
+        if (entry.key != selectedSession &&
+            !all.any((row) => cueSchedulesOverlap(
+                entry.value.startsAt, entry.value.endsAt, row.item)))
+          entry,
+    ];
+    final movable = conflicts.length == 1 ? conflicts.single.savedEvent : null;
+    final existing = movable == null ? null : _savedSchedule(movable);
+    final existingSlots = existing == null
+        ? const <CueTimeSlot>[]
+        : cueNearestFreeSlots(
+            existing.start,
+            existing.end,
+            [
+              for (final row in all)
+                if (row.item.id != conflicts.single.item.id) row.item,
+              CueScheduleItem(id: 'new', title: titleController.text, venue: venueController.text,
+                  start: newStart, end: newEnd),
+            ],
+          );
+    if (!mounted) return null;
+    return showModalBottomSheet<_ScheduleChoice>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.84),
+          child: ListView(
+            shrinkWrap: true,
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 22),
+            children: [
+              Icon(Icons.alt_route_rounded, color: accent, size: 31),
+              SizedBox(height: 11),
+              Text('이 시간에는 다른 일정이 있어요',
+                  style: TextStyle(color: ink, fontSize: 20, fontWeight: FontWeight.w800)),
+              SizedBox(height: 7),
+              Text('행사 시간을 임의로 바꾸지 않아요. 시간을 조정할 수 있는 행사인 경우에만 빈 시간을 골라 주세요.',
+                  style: TextStyle(color: muted, height: 1.5)),
+              SizedBox(height: 14),
+              for (final conflict in conflicts)
+                Container(
+                  margin: EdgeInsets.only(bottom: 8),
+                  padding: EdgeInsets.all(13),
+                  decoration: BoxDecoration(color: paper, borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: borderColor)),
+                  child: Row(children: [
+                    Icon(Icons.event_busy_outlined, color: Color(0xFFE08A23)),
+                    SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(conflict.item.title, style: TextStyle(color: ink, fontWeight: FontWeight.w700)),
+                      Text('${_timeOnly(conflict.item.start)}–${_timeOnly(conflict.item.end)}',
+                          style: TextStyle(color: muted, fontSize: 13)),
+                    ])),
+                  ]),
+                ),
+              if (alternateSessions.isNotEmpty) ...[
+                SizedBox(height: 12),
+                Text('안내문에 있는 다른 회차',
+                    style: TextStyle(color: ink, fontWeight: FontWeight.w800)),
+                SizedBox(height: 5),
+                Text('실제 행사 안내에 적힌 선택지라 시간을 임의로 바꾸지 않아요.',
+                    style: TextStyle(color: muted, fontSize: 12)),
+                for (final entry in alternateSessions)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.event_available_outlined, color: accent),
+                    title: Text(_slotLabel(CueTimeSlot(entry.value.startsAt, entry.value.endsAt))),
+                    subtitle: Text(entry.value.venue),
+                    trailing: Icon(Icons.chevron_right, color: muted),
+                    onTap: () => Navigator.pop(sheetContext,
+                        _ScheduleChoice('alternate', null, null, entry.key)),
+                  ),
+              ],
+              if (newSlots.isNotEmpty) ...[
+                SizedBox(height: 12),
+                Text('방금 찍은 행사를 옮기기',
+                    style: TextStyle(color: ink, fontWeight: FontWeight.w800)),
+                SizedBox(height: 5),
+                Text('자유 방문·체험처럼 시간을 바꿔도 될 때만 선택하세요.',
+                    style: TextStyle(color: muted, fontSize: 12)),
+                for (final slot in newSlots)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.schedule_outlined, color: accent),
+                    title: Text(_slotLabel(slot)),
+                    trailing: Icon(Icons.chevron_right, color: muted),
+                    onTap: () => Navigator.pop(sheetContext, _ScheduleChoice('move_new', slot)),
+                  ),
+              ],
+              if (existing != null && existingSlots.isNotEmpty) ...[
+                Divider(color: borderColor, height: 28),
+                Text('기존 Cue 일정을 옮기기',
+                    style: TextStyle(color: ink, fontWeight: FontWeight.w800)),
+                SizedBox(height: 5),
+                Text('${existing.title}의 시간을 바꿔도 되는지 확인해 주세요.',
+                    style: TextStyle(color: muted, fontSize: 12)),
+                for (final slot in existingSlots.take(2))
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.event_repeat_outlined, color: accent),
+                    title: Text(_slotLabel(slot)),
+                    trailing: Icon(Icons.chevron_right, color: muted),
+                    onTap: () => Navigator.pop(sheetContext, _ScheduleChoice('move_existing', slot, movable)),
+                  ),
+              ],
+              Divider(color: borderColor, height: 24),
+              OutlinedButton(
+                onPressed: () => Navigator.pop(sheetContext, _ScheduleChoice('keep')),
+                style: OutlinedButton.styleFrom(minimumSize: Size.fromHeight(48)),
+                child: Text('겹친 채로 저장'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(sheetContext),
+                style: TextButton.styleFrom(minimumSize: Size.fromHeight(46)),
+                child: Text('돌아가서 다시 확인'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _confirmMovable(String title) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('시간을 바꿔도 되나요?'),
+          content: Text('$title이(가) 고정 시간 행사면 옮기지 마세요. '
+              '자유 방문 행사나 조정 가능한 일정일 때만 계속해 주세요.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text('아니요')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text('옮겨도 돼요')),
+          ],
+        ),
+      ) ?? false;
+
+  Future<void> _moveSavedSchedule(Map<String, dynamic> savedEvent, CueTimeSlot slot) async {
+    final id = savedEvent['id'] as String;
+    final deviceEvent = await _resolveSavedEvent(savedEvent);
+    final previousStart = deviceEvent.start;
+    final previousEnd = deviceEvent.end;
+    deviceEvent.start = tz.TZDateTime.from(slot.start, tz.UTC);
+    deviceEvent.end = tz.TZDateTime.from(slot.end, tz.UTC);
+    final result = await calendarPlugin.createOrUpdateEvent(deviceEvent);
+    if (result?.isSuccess != true) throw CueApiException('기존 캘린더 일정을 옮기지 못했어요.');
+    try {
+      await api.patch('/v1/events/$id', {
+        'title': savedEvent['title'],
+        'venue': savedEvent['venue'],
+        'startsAt': slot.start.toUtc().toIso8601String(),
+        'endsAt': slot.end.toUtc().toIso8601String(),
+        'category': savedEvent['category'] ?? '기타',
+        'format': savedEvent['format'] ?? '기타',
+        'domains': savedEvent['domains'] ?? [],
+        'description': savedEvent['description'] ?? '',
+        'tags': savedEvent['tags'] ?? [],
+        'applicationDeadline': savedEvent['applicationDeadline'],
+        'participationFee': savedEvent['participationFee'],
+        'locationAddress': savedEvent['locationAddress'],
+        'sourceUrl': savedEvent['sourceUrl'],
+        'calendarId': deviceEvent.calendarId,
+        'calendarEventId': result?.data ?? deviceEvent.eventId,
+        'reminderMinutes': savedEvent['reminderMinutes'],
+      });
+    } catch (_) {
+      deviceEvent.start = previousStart;
+      deviceEvent.end = previousEnd;
+      await calendarPlugin.createOrUpdateEvent(deviceEvent);
+      throw CueApiException('서버에 반영하지 못해 기존 일정 시간을 되돌렸어요.');
+    }
+    await _refresh();
+  }
+
+  Future<bool> _reviewCalendarPlacement(
+    List<calendar.Calendar> calendars,
+    String title,
+    String venue,
+  ) async {
+    final start = startsAt!;
+    final end = endsAt!;
+    final rows = await _readDaySchedules(calendars, start);
+    final duplicate = rows.where((row) => cueLooksLikeDuplicate(
+        title, venue, start, end, row.item)).firstOrNull;
+    if (preventDuplicateEvents && duplicate != null) {
+      return _confirmCalendarDuplicate(duplicate);
+    }
+    if (!checkScheduleConflicts) return true;
+    final conflicts = rows.where((row) => cueSchedulesOverlap(start, end, row.item)).toList();
+    if (conflicts.isEmpty) return true;
+    final choice = await _chooseConflictRoute(rows, conflicts, start, end);
+    if (choice == null) return false;
+    if (choice.action == 'keep') return true;
+    if (choice.action == 'alternate' && choice.sessionIndex != null) {
+      if (!mounted) return false;
+      setState(() {
+        selectedSession = choice.sessionIndex;
+        _applySession(choice.sessionIndex);
+      });
+      return true;
+    }
+    if (choice.action == 'move_new' && choice.slot != null) {
+      if (!await _confirmMovable(title)) return false;
+      if (!mounted) return false;
+      setState(() {
+        startsAt = choice.slot!.start;
+        endsAt = choice.slot!.end;
+        selectedSession = null;
+      });
+      return true;
+    }
+    if (choice.action == 'move_existing' && choice.slot != null && choice.savedEvent != null) {
+      if (!await _confirmMovable(choice.savedEvent!['title'] as String? ?? '기존 일정')) return false;
+      await _moveSavedSchedule(choice.savedEvent!, choice.slot!);
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _save() async {
     if (candidate == null) return;
     if (candidate!.sessions.length > 1 && selectedSession == null && startsAt == null) {
@@ -744,7 +1165,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       return;
     }
     final title = titleController.text.trim();
-    final venue = venueController.text.trim();
+    var venue = venueController.text.trim();
     if (title.isEmpty || venue.isEmpty || startsAt == null || endsAt == null) {
       _message('행사 이름, 장소, 시간을 확인해 주세요.');
       return;
@@ -759,6 +1180,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       _message('신청 마감일은 YYYY-MM-DD 형식으로 입력해 주세요.');
       return;
     }
+    if (!await _confirmVenueContext()) return;
+    venue = venueController.text.trim();
     setState(() => saving = true);
     try {
       final permission = await calendarPlugin.requestPermissions();
@@ -766,11 +1189,10 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         throw CueApiException('캘린더 권한이 필요해요. 기기 설정에서 허용해 주세요.');
       }
       final list = await calendarPlugin.retrieveCalendars();
+      final allCalendars =
+          list.data?.where((item) => item.id != null).toList() ?? [];
       final calendars =
-          list.data
-              ?.where((item) => item.isReadOnly != true && item.id != null)
-              .toList() ??
-          [];
+          allCalendars.where((item) => item.isReadOnly != true).toList();
       if (calendars.isEmpty) throw CueApiException('저장할 수 있는 캘린더가 없어요.');
       final target =
           calendars
@@ -778,6 +1200,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
               .firstOrNull ??
           calendars.where((item) => item.isDefault == true).firstOrNull ??
           calendars.first;
+      if (!await _reviewCalendarPlacement(allCalendars, title, venue)) return;
+      if (!await _confirmVenueContext()) return;
+      venue = venueController.text.trim();
       final event = calendar.Event(
         target.id,
         title: title,
@@ -1149,6 +1574,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       stage = ScanStage.idle;
       reviewStep = 0;
       selectedSession = null;
+      venueConfirmed = false;
       startsAt = null;
       endsAt = null;
       selectedCategory = '기타';
@@ -1408,8 +1834,58 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (stage == ScanStage.pastEvent) _pastEventCard(),
       if (stage == ScanStage.review) _reviewCard(),
       if (stage == ScanStage.saved) _savedCard(),
+      if (stage == ScanStage.idle) ...[
+        SizedBox(height: 18),
+        _scanAgentGuide(),
+      ],
       SizedBox(height: 22),
     ],
+  );
+
+  Widget _scanAgentGuide() => _card(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(13)),
+            child: Icon(Icons.auto_awesome_outlined, color: accent, size: 21),
+          ),
+          SizedBox(width: 12),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('저장 전에 Cue가 먼저 확인해요',
+                  style: TextStyle(color: ink, fontSize: 16, fontWeight: FontWeight.w800)),
+              SizedBox(height: 3),
+              Text('일정을 임의로 바꾸지 않고 선택지를 보여드려요.',
+                  style: TextStyle(color: muted, fontSize: 13, height: 1.45)),
+            ],
+          )),
+        ]),
+        SizedBox(height: 16),
+        _agentCheckRow(Icons.content_copy_outlined, '중복 일정', '이미 저장한 행사는 다시 추가하지 않아요.'),
+        _agentCheckRow(Icons.alt_route_rounded, '시간 충돌', '겹치면 같은 날의 빈 시간을 제안해요.'),
+        _agentCheckRow(Icons.location_searching_outlined, '교내 장소', '학교·캠퍼스·건물명이 부족하면 다시 물어봐요.', last: true),
+      ],
+    ),
+  );
+
+  Widget _agentCheckRow(IconData icon, String title, String text, {bool last = false}) => Padding(
+    padding: EdgeInsets.only(bottom: last ? 0 : 13),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Icon(icon, size: 19, color: muted),
+      SizedBox(width: 11),
+      Expanded(child: RichText(text: TextSpan(
+        style: TextStyle(color: muted, fontSize: 13, height: 1.45),
+        children: [
+          TextSpan(text: '$title  ', style: TextStyle(color: ink, fontWeight: FontWeight.w700)),
+          TextSpan(text: text),
+        ],
+      ))),
+    ]),
   );
 
   Widget _captureCard() => Container(
@@ -1770,8 +2246,27 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       ],
       TextField(
         controller: venueController,
-        decoration: InputDecoration(labelText: '장소', prefixIcon: Icon(Icons.place_outlined)),
+        onChanged: (_) => setState(() => venueConfirmed = false),
+        decoration: InputDecoration(
+          labelText: '장소',
+          hintText: '예: 한국대학교 서울캠퍼스 본관 3층 시청각실',
+          prefixIcon: Icon(Icons.place_outlined),
+        ),
       ),
+      if (confirmLocalVenues && !venueConfirmed && cueVenueNeedsContext(venueController.text)) ...[
+        SizedBox(height: 9),
+        Container(
+          padding: EdgeInsets.all(13),
+          decoration: BoxDecoration(color: isDark ? Color(0xFF312919) : Color(0xFFFFF6E8),
+              borderRadius: BorderRadius.circular(14)),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.location_searching_outlined, size: 19, color: Color(0xFFC77818)),
+            SizedBox(width: 9),
+            Expanded(child: Text('교내 장소로 보여요. 학교·캠퍼스·건물명까지 적으면 나중에 찾기 쉬워요.',
+                style: TextStyle(color: isDark ? Color(0xFFFFC978) : Color(0xFF8A5512), fontSize: 13, height: 1.45))),
+          ]),
+        ),
+      ],
       SizedBox(height: 12),
       OutlinedButton.icon(
         onPressed: () => _editSchedule(ambiguous: event.sessions.isEmpty && startsAt == null),
@@ -1842,7 +2337,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     reviewStep = value.clamp(0, 3);
   });
 
-  void _nextReviewStep() {
+  Future<void> _nextReviewStep() async {
     if (reviewStep == 0 && titleController.text.trim().isEmpty) {
       _message('행사 이름을 확인해 주세요.');
       return;
@@ -1856,6 +2351,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         _message('장소와 시간을 확인해 주세요.');
         return;
       }
+      if (!await _confirmVenueContext()) return;
     }
     _setReviewStep(reviewStep + 1);
   }
@@ -2199,8 +2695,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
 
   Widget _settings() {
     final section = settingsSection;
-    if (section != null) {
-      return PopScope<Object?>(
+    final page = section != null
+      ? PopScope<Object?>(
         canPop: false,
         onPopInvokedWithResult: (didPop, result) {
           if (!didPop) setState(() => settingsSection = null);
@@ -2218,6 +2714,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ),
           _pageTitle(section, switch (section) {
             '캘린더와 알림' => '새 일정을 저장할 때 적용할 기본값',
+            '일정 에이전트' => '중복·충돌·불분명한 장소를 저장 전에 확인',
             '화면 테마' => '편안하게 볼 수 있는 화면',
             '추천' => '관심사 기록과 행사 추천 관리',
             _ => '데이터 처리와 익명 계정 안내',
@@ -2226,41 +2723,119 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ..._settingsContent(section),
         ],
         ),
-      );
-    }
-    return Column(
+      )
+      : Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _pageTitle('설정', 'Cue를 내게 맞게'),
-        SizedBox(height: 20),
-        _card(Column(children: [
+        _pageTitle('설정', '내 Cue를 편하게 맞춰보세요'),
+        SizedBox(height: 18),
+        InkWell(
+          onTap: () => setState(() => settingsSection = '내 데이터'),
+          borderRadius: BorderRadius.circular(22),
+          child: Container(
+            padding: EdgeInsets.all(17),
+            decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(22)),
+            child: Row(children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(18)),
+                child: Icon(Icons.check_rounded, color: Colors.white, size: 28),
+              ),
+              SizedBox(width: 13),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('내 Cue', style: TextStyle(color: ink, fontSize: 18, fontWeight: FontWeight.w800)),
+                SizedBox(height: 3),
+                Text(cloudConnected ? '클라우드에 연결됨' : '연결 상태 확인 필요',
+                    style: TextStyle(color: cloudConnected ? Color(0xFF28A06A) : muted, fontSize: 13)),
+              ])),
+              Icon(Icons.chevron_right, color: muted),
+            ]),
+          ),
+        ),
+        SizedBox(height: 24),
+        _settingsGroup('일정', [
           _settingsEntry(Icons.calendar_month_outlined, '캘린더와 알림',
               '$preferredCalendarName · ${_reminderLabel(defaultReminderMinutes)}'),
-          Divider(color: borderColor, height: 1),
+          _settingsEntry(Icons.auto_fix_high_outlined, '일정 에이전트',
+              '중복·충돌·교내 장소 확인'),
+        ]),
+        SizedBox(height: 22),
+        _settingsGroup('개인화', [
+          _settingsEntry(Icons.auto_awesome_outlined, '추천',
+              personalizationEnabled && recommendationEnabled ? '관심사 기반 추천 사용 중' : '추천 꺼짐'),
+        ]),
+        SizedBox(height: 22),
+        _settingsGroup('앱', [
           _settingsEntry(Icons.palette_outlined, '화면 테마',
               switch (cueThemeMode.value) {
                 ThemeMode.system => '시스템 설정 따르기',
                 ThemeMode.light => '라이트',
                 ThemeMode.dark => '다크',
               }),
-          Divider(color: borderColor, height: 1),
-          _settingsEntry(Icons.auto_awesome_outlined, '추천',
-              personalizationEnabled && recommendationEnabled ? '관심사 기반 추천 사용 중' : '추천 꺼짐'),
-          Divider(color: borderColor, height: 1),
           _settingsEntry(Icons.shield_outlined, '내 데이터', '사진 처리 안내 · 계정과 기록'),
-        ])),
+        ]),
       ],
+    );
+    return AnimatedSwitcher(
+      duration: Duration(milliseconds: 240),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(begin: Offset(section == null ? -0.04 : 0.04, 0), end: Offset.zero)
+              .animate(animation),
+          child: child,
+        ),
+      ),
+      child: KeyedSubtree(key: ValueKey(section ?? 'settings-home'), child: page),
     );
   }
 
+  Widget _settingsGroup(String label, List<Widget> entries) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Padding(
+        padding: EdgeInsets.only(left: 4, bottom: 9),
+        child: Text(label, style: TextStyle(color: muted, fontSize: 13, fontWeight: FontWeight.w700)),
+      ),
+      Container(
+        decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(20)),
+        clipBehavior: Clip.antiAlias,
+        child: Column(children: [
+          for (var index = 0; index < entries.length; index++) ...[
+            entries[index],
+            if (index + 1 < entries.length)
+              Divider(color: borderColor, height: 1, indent: 66),
+          ],
+        ]),
+      ),
+    ],
+  );
+
   Widget _settingsEntry(IconData icon, String title, String summary) => ListTile(
-    contentPadding: EdgeInsets.zero,
-    leading: Icon(icon, color: accent),
+    contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 7),
+    leading: Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(12)),
+      child: Icon(icon, color: accent, size: 20),
+    ),
     title: Text(title),
     subtitle: Text(summary, maxLines: 2, overflow: TextOverflow.ellipsis),
     trailing: Icon(Icons.chevron_right, color: muted),
     onTap: () => setState(() => settingsSection = title),
   );
+
+  Future<void> _setAgentPreference(String key, bool value) async {
+    setState(() {
+      if (key == 'prevent_duplicate_events') preventDuplicateEvents = value;
+      if (key == 'check_schedule_conflicts') checkScheduleConflicts = value;
+      if (key == 'confirm_local_venues') confirmLocalVenues = value;
+    });
+    await (await SharedPreferences.getInstance()).setBool(key, value);
+  }
 
   List<Widget> _settingsContent(String section) => switch (section) {
     '캘린더와 알림' => [
@@ -2337,6 +2912,44 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             ),
           ],
         ),
+      ),
+      SizedBox(height: 14),
+    ],
+    '일정 에이전트' => [
+      _card(Column(children: [
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          secondary: Icon(Icons.content_copy_outlined, color: accent),
+          title: Text('중복 행사 확인'),
+          subtitle: Text('같은 행사·시간·장소를 다시 찍으면 저장 전에 알려줘요.'),
+          value: preventDuplicateEvents,
+          onChanged: (value) => _setAgentPreference('prevent_duplicate_events', value),
+        ),
+        Divider(color: borderColor),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          secondary: Icon(Icons.alt_route_rounded, color: accent),
+          title: Text('시간 충돌 확인'),
+          subtitle: Text('기기 캘린더와 겹치면 빈 시간 후보를 보여줘요.'),
+          value: checkScheduleConflicts,
+          onChanged: (value) => _setAgentPreference('check_schedule_conflicts', value),
+        ),
+        Divider(color: borderColor),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          secondary: Icon(Icons.location_searching_outlined, color: accent),
+          title: Text('교내 장소 확인'),
+          subtitle: Text('학교·캠퍼스·건물 정보가 부족하면 직접 확인해요.'),
+          value: confirmLocalVenues,
+          onChanged: (value) => _setAgentPreference('confirm_local_venues', value),
+        ),
+      ])),
+      SizedBox(height: 12),
+      Padding(
+        padding: EdgeInsets.symmetric(horizontal: 4),
+        child: Text('행사 시간은 고정일 수 있어 자동으로 바꾸지 않아요. '
+            '빈 시간을 제안한 뒤 항상 확인을 받아요.',
+            style: TextStyle(color: muted, fontSize: 13, height: 1.5)),
       ),
       SizedBox(height: 14),
     ],
@@ -2892,18 +3505,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     });
   }
 
-  Widget _detail(IconData icon, String text) => Padding(
-    padding: EdgeInsets.only(top: 5),
-    child: Row(
-      children: [
-        Icon(icon, size: 16, color: muted),
-        SizedBox(width: 7),
-        Expanded(
-          child: Text(text, style: TextStyle(color: muted, fontSize: 13)),
-        ),
-      ],
-    ),
-  );
   Widget _pageTitle(String title, String subtitle) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [

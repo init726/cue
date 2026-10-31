@@ -17,6 +17,7 @@ void main() {
     expect(find.text('내 데이터'), findsOneWidget);
     expect(find.text('기본 알림'), findsNothing);
     expect(find.text('내 관심사 기록 초기화'), findsNothing);
+    await tester.ensureVisible(find.text('화면 테마'));
     await tester.tap(find.text('화면 테마'));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('다크'));
