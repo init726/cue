@@ -102,6 +102,9 @@ export function validateSavedEvent(body) {
   const applicationDeadline = body.applicationDeadline == null ? null : String(body.applicationDeadline);
   if (applicationDeadline && (!hasTimezone(applicationDeadline) || !Number.isFinite(Date.parse(applicationDeadline)))) throw invalid('신청 마감일이 올바르지 않아요.');
   const sourceUrl = typeof body.sourceUrl === 'string' && /^https:\/\//.test(body.sourceUrl) ? body.sourceUrl.slice(0, 500) : null;
+  const latitude = Number(body.locationLatitude), longitude = Number(body.locationLongitude);
+  const hasCoordinates = Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
+    Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
   const classification = classifyEvent(body);
   return {
     id: randomUUID(), title, venue,
@@ -110,6 +113,8 @@ export function validateSavedEvent(body) {
     tags, ...classification, applicationDeadline: applicationDeadline ? new Date(applicationDeadline).toISOString() : null,
     participationFee: String(body.participationFee || '').trim().slice(0, 100) || null,
     locationAddress: String(body.locationAddress || '').trim().slice(0, 200) || null, sourceUrl,
+    locationLatitude: hasCoordinates ? latitude : null,
+    locationLongitude: hasCoordinates ? longitude : null,
     description: String(body.description || '').trim().slice(0, 500),
     calendarId, calendarEventId, reminderMinutes,
     createdAt: new Date().toISOString(),

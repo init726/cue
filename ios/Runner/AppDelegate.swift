@@ -24,6 +24,18 @@ import CoreLocation
     }
     let routeChannel = FlutterMethodChannel(name: "cue/routes", binaryMessenger: engineBridge.applicationRegistrar.messenger())
     routeChannel.setMethodCallHandler { call, result in
+      if call.method == "geocode",
+         let args = call.arguments as? [String: Any],
+         let place = args["place"] as? String {
+        CLGeocoder().geocodeAddressString(place) { marks, error in
+          guard error == nil, let coordinate = marks?.first?.location?.coordinate else {
+            result(FlutterError(code: "GEOCODE", message: "장소를 지도에서 찾지 못했어요.", details: nil))
+            return
+          }
+          result(["latitude": coordinate.latitude, "longitude": coordinate.longitude])
+        }
+        return
+      }
       guard call.method == "estimateTravel",
             let args = call.arguments as? [String: Any],
             let from = args["from"] as? String,

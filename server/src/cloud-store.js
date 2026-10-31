@@ -24,6 +24,8 @@ const eventFromRow = (row, userEvent = {}) => ({
   description: row.description, createdAt: row.created_at,
   tags: row.tags || [], ...classifyEvent({ ...row, title: row.title, description: row.description, category: row.category, tags: row.tags, domains: row.domains, format: row.format }), applicationDeadline: row.application_deadline, participationFee: row.participation_fee,
   locationAddress: row.location_address, sourceUrl: row.source_url,
+  locationLatitude: row.location_latitude == null ? null : Number(row.location_latitude),
+  locationLongitude: row.location_longitude == null ? null : Number(row.location_longitude),
   originKind: eventOrigin(row), sharingUserId: row.sharing_user_id,
   community: { school: row.community_school || '', region: row.community_region || '', ageBand: row.community_age_band || '' },
   ...(userEvent.calendar_id != null ? { calendarId: userEvent.calendar_id } : {}),
@@ -36,6 +38,8 @@ const eventRow = (event, userId, sourceType = 'scan') => ({
   tags: event.tags || [], format: event.format, domains: event.domains || [], participation_fee: event.participationFee || null, start_at: event.startsAt, end_at: event.endsAt,
   application_deadline: event.applicationDeadline || null,
   location_name: event.venue, location_address: event.locationAddress || null,
+  location_latitude: event.locationLatitude ?? null,
+  location_longitude: event.locationLongitude ?? null,
   source_url: event.sourceUrl || null, source_type: sourceType,
   origin_kind: (event.tags || []).includes('시연용') ? 'demo' : event.originKind === 'web' ? 'web' : 'catalog',
   created_at: event.createdAt || now(), updated_at: now(),
@@ -285,7 +289,9 @@ export class CloudStore {
       .map((row) => row.event_id));
     const catalog = catalogRows.map((row) => eventFromRow(row));
     const results = rankRecommendations({ catalog, saved, interests, excluded, explore: exploreEnabled(), seed, seen,
-      context: { school: profile.school, region: profile.region, ageBand: profile.age_band }, userId: this.userId });
+      context: { school: profile.school, region: profile.region, ageBand: profile.age_band,
+        regionLatitude: profile.region_latitude == null ? null : Number(profile.region_latitude),
+        regionLongitude: profile.region_longitude == null ? null : Number(profile.region_longitude) }, userId: this.userId });
     // 추천 기록 저장은 응답을 막지 않는다.
     this.insert('recommendations', results.map((event) => ({
       user_id: this.userId, event_id: event.id,

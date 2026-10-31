@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { communityContext, eventOrigin } from '../src/community.js';
+import { communityContext, distanceKm, eventOrigin } from '../src/community.js';
 import { rankRecommendations } from '../src/personalization.js';
 import { CloudStore } from '../src/cloud-store.js';
 
@@ -15,7 +15,11 @@ test('community matching supplements interests and source labels stay truthful',
   assert.equal(eventOrigin({ tags: ['시연용'] }), 'demo');
   assert.equal(eventOrigin({}), 'catalog');
   assert.deepEqual(communityContext({ school: ' A ', region: ' B ', ageBand: 'invalid' }),
-    { school: 'A', region: 'B', ageBand: '' });
+    { school: 'A', region: 'B', ageBand: '', regionLatitude: null, regionLongitude: null });
+  assert.ok(distanceKm(
+    { latitude: 37.5665, longitude: 126.9780 },
+    { latitude: 37.5512, longitude: 126.9882 },
+  ) < 3);
   const base = { title: 'Hidden event', category: '기타', startsAt: '2099-01-01T01:00:00Z',
     endsAt: '2099-01-01T02:00:00Z', originKind: 'shared' };
   const args = { saved: [], interests: new Map(), excluded: new Set(), userId: 'viewer', context: { school: 'A' },
@@ -26,6 +30,17 @@ test('community matching supplements interests and source labels stay truthful',
     ] };
   assert.deepEqual(rankRecommendations(args).map((row) => row.id), ['same']);
   assert.equal(rankRecommendations({ ...args, saved: [{ title: 'Other', startsAt: base.startsAt, endsAt: base.endsAt }] }).length, 0);
+});
+
+test('nearby shared events from the same age band get a truthful distance reason', () => {
+  const base = { title: 'Nearby event', category: '기타', startsAt: '2099-01-01T01:00:00Z',
+    endsAt: '2099-01-01T02:00:00Z', originKind: 'shared', sharingUserId: 'other',
+    community: { ageBand: '20s' }, locationLatitude: 37.5512, locationLongitude: 126.9882 };
+  const results = rankRecommendations({ catalog: [{ ...base, id: 'nearby' }], saved: [],
+    interests: new Map(), excluded: new Set(), userId: 'viewer',
+    context: { ageBand: '20s', regionLatitude: 37.5665, regionLongitude: 126.9780 } });
+  assert.equal(results.length, 1);
+  assert.match(results[0].reason, /km.*같은 연령대/);
 });
 
 test('sharing API isolates personal data, enforces ownership, recommends by context and revokes', async () => {

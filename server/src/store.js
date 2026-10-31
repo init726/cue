@@ -65,6 +65,12 @@ for (const [column, type] of [['format', "TEXT NOT NULL DEFAULT '기타'"], ['do
 for (const [column, type] of [['school', "TEXT NOT NULL DEFAULT ''"], ['region', "TEXT NOT NULL DEFAULT ''"], ['age_band', "TEXT NOT NULL DEFAULT ''"]]) {
   if (!db.prepare('PRAGMA table_info(profiles)').all().some((row) => row.name === column)) db.exec(`ALTER TABLE profiles ADD COLUMN ${column} ${type}`);
 }
+for (const [column, type] of [['region_latitude', 'REAL'], ['region_longitude', 'REAL']]) {
+  if (!db.prepare('PRAGMA table_info(profiles)').all().some((row) => row.name === column)) db.exec(`ALTER TABLE profiles ADD COLUMN ${column} ${type}`);
+}
+for (const [column, type] of [['location_latitude', 'REAL'], ['location_longitude', 'REAL']]) {
+  if (!db.prepare('PRAGMA table_info(events)').all().some((row) => row.name === column)) db.exec(`ALTER TABLE events ADD COLUMN ${column} ${type}`);
+}
 for (const [column, type] of [['origin_kind', "TEXT NOT NULL DEFAULT 'legacy'"], ['sharing_user_id', 'TEXT REFERENCES users(id) ON DELETE CASCADE'], ['share_source_event_id', 'TEXT REFERENCES events(id) ON DELETE CASCADE'], ['community_school', "TEXT NOT NULL DEFAULT ''"], ['community_region', "TEXT NOT NULL DEFAULT ''"], ['community_age_band', "TEXT NOT NULL DEFAULT ''"]]) {
   if (!db.prepare('PRAGMA table_info(events)').all().some((row) => row.name === column)) db.exec(`ALTER TABLE events ADD COLUMN ${column} ${type}`);
 }
@@ -77,6 +83,7 @@ const asEvent = (row) => ({
   description: row.description, createdAt: row.created_at,
   tags: JSON.parse(row.tags || '[]'), ...classifyEvent({ ...row, tags: JSON.parse(row.tags || '[]'), domains: JSON.parse(row.domains || '[]') }), applicationDeadline: row.application_deadline, participationFee: row.participation_fee,
   locationAddress: row.location_address, sourceUrl: row.source_url,
+  locationLatitude: row.location_latitude, locationLongitude: row.location_longitude,
   originKind: eventOrigin(row), sharingUserId: row.sharing_user_id,
   community: { school: row.community_school || '', region: row.community_region || '', ageBand: row.community_age_band || '' },
   ...(row.calendar_id != null ? { calendarId: row.calendar_id } : {}),
@@ -87,10 +94,11 @@ const asEvent = (row) => ({
 function insertEvent(event, ownerId, sourceType) {
   const timestamp = event.createdAt || now();
   db.prepare(`INSERT INTO events(id,owner_user_id,title,description,category,tags,start_at,end_at,application_deadline,location_name,
-    location_address,source_url,source_type,created_at,updated_at,format,domains,participation_fee,origin_kind) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    location_address,location_latitude,location_longitude,source_url,source_type,created_at,updated_at,format,domains,participation_fee,origin_kind) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(event.id, ownerId, event.title, event.description || '', event.category,
       JSON.stringify(event.tags || []), event.startsAt, event.endsAt, event.applicationDeadline || null,
-      event.venue, event.locationAddress || null, event.sourceUrl || null, sourceType, timestamp, timestamp, event.format || '기타', JSON.stringify(event.domains || []), event.participationFee || null,
+      event.venue, event.locationAddress || null, event.locationLatitude ?? null, event.locationLongitude ?? null,
+      event.sourceUrl || null, sourceType, timestamp, timestamp, event.format || '기타', JSON.stringify(event.domains || []), event.participationFee || null,
       (event.tags || []).includes('시연용') ? 'demo' : event.originKind === 'web' ? 'web' : 'catalog');
   db.prepare(`INSERT INTO event_sessions(id,event_id,start_at,end_at,location_name) VALUES(?,?,?,?,?)`)
     .run(randomUUID(), event.id, event.startsAt, event.endsAt, event.venue);
@@ -161,7 +169,9 @@ export const store = {
   },
   profile(userId) {
     const row = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId);
-    return row && { school: row.school, region: row.region, ageBand: row.age_band, userId: row.user_id, onboardingCompleted: bool(row.onboarding_completed),
+    return row && { school: row.school, region: row.region, ageBand: row.age_band,
+      regionLatitude: row.region_latitude, regionLongitude: row.region_longitude,
+      userId: row.user_id, onboardingCompleted: bool(row.onboarding_completed),
       personalizationEnabled: bool(row.personalization_enabled), recommendationEnabled: bool(row.recommendation_enabled),
       locale: row.locale, timezone: row.timezone, createdAt: row.created_at, updatedAt: row.updated_at };
   },
@@ -178,9 +188,10 @@ export const store = {
     if (!personalization) db.prepare('DELETE FROM interest_profiles WHERE user_id=?').run(userId);
     if (!personalization) db.prepare('DELETE FROM agent_memories WHERE user_id=?').run(userId);
     if (personalization && !old.personalizationEnabled) this.recomputeInterests(userId);
-    if (['school', 'region', 'ageBand'].some((key) => Object.hasOwn(changes, key))) {
+    if (['school', 'region', 'ageBand', 'regionLatitude', 'regionLongitude'].some((key) => Object.hasOwn(changes, key))) {
       const context = communityContext({ ...old, ...changes });
-      db.prepare('UPDATE profiles SET school=?,region=?,age_band=? WHERE user_id=?').run(context.school, context.region, context.ageBand, userId);
+      db.prepare('UPDATE profiles SET school=?,region=?,age_band=?,region_latitude=?,region_longitude=? WHERE user_id=?')
+        .run(context.school, context.region, context.ageBand, context.regionLatitude, context.regionLongitude, userId);
       db.prepare('UPDATE events SET community_school=?,community_region=?,community_age_band=? WHERE sharing_user_id=?').run(context.school,context.region,context.ageBand,userId);
     }
     return this.profile(userId);
@@ -222,9 +233,10 @@ export const store = {
     if (!current) return null;
     transact(() => {
       db.prepare(`UPDATE events SET title=?,description=?,category=?,tags=?,start_at=?,end_at=?,application_deadline=?,
-        location_name=?,location_address=?,source_url=?,updated_at=?,format=?,domains=?,participation_fee=? WHERE id=? AND owner_user_id=?`)
+        location_name=?,location_address=?,location_latitude=?,location_longitude=?,source_url=?,updated_at=?,format=?,domains=?,participation_fee=? WHERE id=? AND owner_user_id=?`)
         .run(event.title,event.description,event.category,JSON.stringify(event.tags || []),event.startsAt,event.endsAt,
-          event.applicationDeadline || null,event.venue,event.locationAddress || null,event.sourceUrl || null,now(),event.format,JSON.stringify(event.domains || []),event.participationFee || null,eventId,userId);
+          event.applicationDeadline || null,event.venue,event.locationAddress || null,event.locationLatitude ?? null,
+          event.locationLongitude ?? null,event.sourceUrl || null,now(),event.format,JSON.stringify(event.domains || []),event.participationFee || null,eventId,userId);
       db.prepare(`UPDATE event_sessions SET start_at=?,end_at=?,location_name=? WHERE event_id=?`)
         .run(event.startsAt,event.endsAt,event.venue,eventId);
       db.prepare(`UPDATE user_events SET calendar_id=?,calendar_event_id=?,reminder_minutes=?,updated_at=? WHERE user_id=? AND event_id=?`)

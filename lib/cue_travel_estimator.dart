@@ -9,6 +9,12 @@ class CueTravelEstimate {
   final int distanceMeters;
 }
 
+class CueGeoPoint {
+  const CueGeoPoint({required this.latitude, required this.longitude});
+  final double latitude;
+  final double longitude;
+}
+
 class CueTravelEstimator {
   static const _channel = MethodChannel('cue/routes');
 
@@ -32,6 +38,23 @@ class CueTravelEstimator {
       return CueTravelEstimate(
         minutes: (result['minutes'] as num).ceil(),
         distanceMeters: (result['distanceMeters'] as num).round(),
+      );
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  Future<CueGeoPoint?> geocode(String place) async {
+    if (place.trim().isEmpty) return null;
+    try {
+      final result = await _channel.invokeMapMethod<String, dynamic>(
+        'geocode',
+        {'place': place.trim()},
+      );
+      if (result == null) return null;
+      return CueGeoPoint(
+        latitude: (result['latitude'] as num).toDouble(),
+        longitude: (result['longitude'] as num).toDouble(),
       );
     } on PlatformException {
       return null;

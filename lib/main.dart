@@ -1307,6 +1307,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() => stage = ScanStage.saved);
       try {
+        final eventPoint = await travelEstimator.geocode(venue);
         await api.post('/v1/events', {
           'title': title,
           'venue': venue,
@@ -1320,6 +1321,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           'applicationDeadline': deadlineController.text.trim().isEmpty
               ? null : DateTime.tryParse('${deadlineController.text.trim()}T23:59:00')?.toUtc().toIso8601String(),
           'participationFee': feeController.text.trim().isEmpty ? null : feeController.text.trim(),
+          if (eventPoint != null) 'locationLatitude': eventPoint.latitude,
+          if (eventPoint != null) 'locationLongitude': eventPoint.longitude,
           'calendarId': target.id,
           'calendarEventId': result!.data,
           'reminderMinutes': reminderMinutes,
@@ -1812,6 +1815,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('cue_onboarding_completed', true);
     await prefs.setBool('cue_onboarding_recommendations', personalizationEnabled && recommendationEnabled);
+    await prefs.setString('cue_onboarding_region', communityRegion);
+    await prefs.setString('cue_onboarding_age_band', communityAgeBand);
     await prefs.setBool('cue_onboarding_synced', false);
     if (!mounted) return;
     setState(() => onboardingCompleted = true);
@@ -1823,10 +1828,17 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     // 키가 없으면 예전 버전에서 이미 서버에 저장한 사용자다.
     if (prefs.getBool('cue_onboarding_synced') != false) return;
     final enabled = prefs.getBool('cue_onboarding_recommendations') ?? true;
+    final region = prefs.getString('cue_onboarding_region') ?? '';
+    final ageBand = prefs.getString('cue_onboarding_age_band') ?? '';
+    final point = await travelEstimator.geocode(region);
     await api.patch('/v1/profile', {
       'onboardingCompleted': true,
       'personalizationEnabled': enabled,
       'recommendationEnabled': enabled,
+      'region': region,
+      'ageBand': ageBand,
+      if (point != null) 'regionLatitude': point.latitude,
+      if (point != null) 'regionLongitude': point.longitude,
     });
     await prefs.setBool('cue_onboarding_synced', true);
     onboardingPreferencesDirty = false;
@@ -1881,6 +1893,30 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           recommendationEnabled = value;
         }),
       )),
+      SizedBox(height: 14),
+      _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _eyebrow('선택 · 추천 환경'),
+        SizedBox(height: 10),
+        TextField(
+          decoration: InputDecoration(labelText: '주로 활동하는 지역', hintText: '예: 서울 성북구'),
+          onChanged: (value) => communityRegion = value.trim(),
+        ),
+        SizedBox(height: 10),
+        DropdownButtonFormField<String>(
+          initialValue: communityAgeBand,
+          decoration: InputDecoration(labelText: '연령대'),
+          items: ['', 'under20', '20s', '30s', '40plus'].map((value) => DropdownMenuItem(
+            value: value,
+            child: Text(value.isEmpty ? '선택 안 함' : _ageBandLabel(value)),
+          )).toList(),
+          onChanged: (value) => setState(() => communityAgeBand = value ?? ''),
+        ),
+        SizedBox(height: 8),
+        Text(
+          '정확한 생년월일이나 현재 위치는 저장하지 않아요. 지역의 대략적인 중심점과 연령대만 추천에 사용해요.',
+          style: TextStyle(color: muted, fontSize: 12, height: 1.45),
+        ),
+      ])),
       SizedBox(height: 14),
       Text(
         '로그인 없이 바로 시작해요. 사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송돼요. '
@@ -3425,7 +3461,14 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         ],
       )),
     );
-    if (result != null && mounted) await _updateProfile(result);
+    if (result != null && mounted) {
+      final point = await travelEstimator.geocode(result['region'] as String? ?? '');
+      if (point != null) {
+        result['regionLatitude'] = point.latitude;
+        result['regionLongitude'] = point.longitude;
+      }
+      await _updateProfile(result);
+    }
   }
 
   Future<void> _manageShares() async {

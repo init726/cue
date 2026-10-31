@@ -146,6 +146,8 @@ async function cloudProfile(user, changes) {
   return {
     userId: row.user_id, onboardingCompleted: row.onboarding_completed,
     school: row.school || '', region: row.region || '', ageBand: row.age_band || '',
+    regionLatitude: row.region_latitude == null ? null : Number(row.region_latitude),
+    regionLongitude: row.region_longitude == null ? null : Number(row.region_longitude),
     personalizationEnabled: row.personalization_enabled,
     recommendationEnabled: row.recommendation_enabled,
     locale: row.locale, timezone: row.timezone,
@@ -295,6 +297,8 @@ export const server = http.createServer(async (req, res) => {
       changes.school = context.school;
       changes.region = context.region;
       changes.age_band = context.ageBand;
+      changes.region_latitude = context.regionLatitude;
+      changes.region_longitude = context.regionLongitude;
       const profile = await cloudProfile(user, changes);
       await data.onProfileChanged(previous, profile);
       store.updateProfile(user.id, profile);
@@ -321,7 +325,7 @@ export const server = http.createServer(async (req, res) => {
         backgroundDiscoveryAt.set(user.id, Date.now());
         discoverFor(data, user.id).catch(() => {});
       }
-      const publicEvents = (items) => items.map(({ sharingUserId, community, ...event }) => event);
+      const publicEvents = (items) => items.map(({ sharingUserId, community, locationLatitude, locationLongitude, ...event }) => event);
       if (demo) return send(res, 200, { events: publicEvents(events) });
       if (!events.length && user.supabase) {
         try {

@@ -19,7 +19,8 @@ test('PostgreSQL sharing migration enforces RLS, RPC ownership and context updat
           $$ select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $$;
         grant usage on schema public, auth to authenticated;
       `);
-      for (const file of ['20260919000000_cue_memory.sql', '20260920000000_event_topics.sql', '20261028000000_community_sharing.sql']) {
+      for (const file of ['20260919000000_cue_memory.sql', '20260920000000_event_topics.sql',
+        '20261028000000_community_sharing.sql', '20261031000000_nearby_recommendations.sql']) {
         const sql = await fs.readFile(new URL(`../../supabase/migrations/${file}`, import.meta.url), 'utf8');
         await db.exec(sql.replace('create extension if not exists pgcrypto;', ''));
       }
