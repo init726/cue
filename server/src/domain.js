@@ -31,6 +31,57 @@ function mergeContiguousSessions(items) {
   return merged;
 }
 
+const isoDate = (value) => {
+  const text = String(value || '').trim();
+  if (!/^\d{4}-\d\d-\d\d$/.test(text)) return null;
+  const date = new Date(`${text}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === text ? text : null;
+};
+const clock = (value) => {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value || '').trim());
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+};
+const asClock = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+const weekdaySet = (value) => [...new Set((Array.isArray(value) ? value : []).map(Number)
+  .filter((day) => Number.isInteger(day) && day >= 1 && day <= 7))].sort();
+
+// 기간형 행사는 보통 머무는 시간을 종류별 기본값으로 잡는다. 안내문에 소요 시간이 있으면 그 값을 쓴다.
+function defaultVisitMinutes(category, tags) {
+  if (tags.some((tag) => tag.includes('팝업'))) return 45;
+  if (category === '박람회') return 120;
+  if (category.includes('페스티벌')) return 180;
+  return 90;
+}
+
+// 전시·팝업·박람회처럼 기간 안에 자유롭게 방문하는 행사를 날짜 목록 대신 기간·운영 시간·휴관일로 정리한다.
+// 하루짜리이거나 안내문에 날짜가 실제로 적혀 있지 않으면 기간형으로 보지 않는다.
+export function cleanPeriod(raw, category = '기타', tags = []) {
+  if (!raw || typeof raw !== 'object') return null;
+  const startDate = isoDate(raw.start_date), endDate = isoDate(raw.end_date);
+  const venue = String(raw.venue || '').trim().slice(0, 160);
+  const dateText = String(raw.date_text || '').trim().slice(0, 120);
+  if (!startDate || !endDate || endDate <= startDate || !venue || !hasCalendarDate(dateText)) return null;
+  const hoursText = String(raw.hours_text || '').trim().slice(0, 160);
+  const closedWeekdays = weekdaySet(raw.closed_weekdays);
+  // 정기 휴관 요일이 운영 요일에도 들어가 있으면(예: 공휴일 운영 시간에 월요일을 넣은 경우) 휴관을 따른다.
+  const hours = !hasClockTime(hoursText) ? [] : (Array.isArray(raw.hours) ? raw.hours : []).slice(0, 7).flatMap((item) => {
+    const weekdays = weekdaySet(item?.weekdays).filter((day) => !closedWeekdays.includes(day));
+    const open = clock(item?.open), close = clock(item?.close);
+    const lastEntry = clock(item?.last_entry);
+    if (!weekdays.length || open == null || close == null || close <= open) return [];
+    return [{ weekdays, open: asClock(open), close: asClock(close),
+      lastEntry: lastEntry != null && lastEntry > open && lastEntry <= close ? asClock(lastEntry) : null }];
+  });
+  const visit = Number(raw.visit_minutes);
+  return {
+    startDate, endDate, venue, dateText, hoursText, hours,
+    closedWeekdays,
+    closedDates: [...new Set((Array.isArray(raw.closed_dates) ? raw.closed_dates : []).map(isoDate)
+      .filter((day) => day && day >= startDate && day <= endDate))].sort().slice(0, 60),
+    visitMinutes: Number.isInteger(visit) && visit >= 30 && visit <= 480 ? visit : defaultVisitMinutes(category, tags),
+  };
+}
+
 export function cleanExtraction(raw) {
   if (!raw || raw.is_event !== true) return null;
   const title = String(raw.title || '').trim().slice(0, 120);
@@ -57,9 +108,11 @@ export function cleanExtraction(raw) {
       const end = Date.parse(item.endsAt);
       return hasTimezone(item.startsAt) && hasTimezone(item.endsAt) && Number.isFinite(start) && Number.isFinite(end) && end > start && item.venue;
     });
-  const sessions = mergeContiguousSessions(rawSessions.flatMap(splitVenues));
+  const period = cleanPeriod(raw.period, category, tags);
+  // 기간형 행사는 날짜별 회차 대신 기간 정보로 방문 날짜와 시간을 고른다.
+  const sessions = period ? [] : mergeContiguousSessions(rawSessions.flatMap(splitVenues));
   const classification = classifyEvent({ ...raw, title, category, tags });
-  const timeMode = sessions.length === 0 ? 'unknown'
+  const timeMode = period ? 'period' : sessions.length === 0 ? 'unknown'
     : ['fixed', 'multiple', 'flexible'].includes(raw.time_mode)
       ? raw.time_mode : sessions.length > 1 ? 'multiple' : 'fixed';
   const recommendedArrivalMinutes = [0, 15, 30, 60].includes(Number(raw.recommended_arrival_minutes))
@@ -76,10 +129,10 @@ export function cleanExtraction(raw) {
       applicationDeadline: typeof raw.application_deadline === 'string' &&
         hasTimezone(raw.application_deadline) && Number.isFinite(Date.parse(raw.application_deadline)) ? 'known' : 'unknown',
       participationFee: raw.participation_fee ? 'known' : 'unknown',
-      time: sessions.length ? 'known' : 'unknown',
+      time: sessions.length || period ? 'known' : 'unknown',
     },
-    sessions,
-    needsManualDetails: sessions.length === 0,
+    sessions, period,
+    needsManualDetails: sessions.length === 0 && !period,
   };
 }
 

@@ -15,6 +15,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'cue_api.dart';
 import 'cue_event_identity.dart';
 import 'cue_categories.dart';
+import 'cue_period.dart';
+import 'cue_period_planner.dart';
 import 'cue_route.dart';
 import 'cue_schedule_agent.dart';
 import 'cue_splash.dart';
@@ -580,6 +582,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         selectedSession = event.sessions.length == 1 ? 0 : null;
         venueConfirmed = false;
         _applySession(selectedSession);
+        if (event.period != null) venueController.text = event.period!.venue;
       });
     } catch (error) {
       if (mounted && run == analysisRun) {
@@ -888,9 +891,16 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   Future<List<_CalendarSchedule>> _readDaySchedules(
     List<calendar.Calendar> calendars,
     DateTime date,
-  ) async {
+  ) {
     final dayStart = DateTime(date.year, date.month, date.day);
-    final dayEnd = dayStart.add(Duration(days: 1));
+    return _readSchedules(calendars, dayStart, dayStart.add(Duration(days: 1)));
+  }
+
+  Future<List<_CalendarSchedule>> _readSchedules(
+    List<calendar.Calendar> calendars,
+    DateTime dayStart,
+    DateTime dayEnd,
+  ) async {
     final rows = <_CalendarSchedule>[];
     for (final source in calendars) {
       if (source.id == null) continue;
@@ -980,9 +990,15 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     DateTime newStart,
     DateTime newEnd,
   ) async {
-    final newSlots = candidate?.timeMode == 'flexible'
-        ? cueNearestFreeSlots(newStart, newEnd, all.map((row) => row.item).toList())
-        : const <CueTimeSlot>[];
+    final period = candidate?.period;
+    final busy = all.map((row) => row.item).toList();
+    final periodSlot = period == null ? null : cueBestVisitOn(period, newStart, busy,
+        now: DateTime.now(), visit: newEnd.difference(newStart));
+    final newSlots = period != null
+        ? [?periodSlot]
+        : candidate?.timeMode == 'flexible'
+            ? cueNearestFreeSlots(newStart, newEnd, busy)
+            : const <CueTimeSlot>[];
     final alternateSessions = <MapEntry<int, CueSession>>[
       for (final entry in (candidate?.sessions ?? const <CueSession>[]).asMap().entries)
         if (entry.key != selectedSession &&
@@ -1177,7 +1193,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       return true;
     }
     if (choice.action == 'move_new' && choice.slot != null) {
-      if (!await _confirmMovable(title)) return false;
+      // 기간형 행사는 운영 시간 안에서만 옮기므로 따로 묻지 않는다.
+      if (candidate?.period == null && !await _confirmMovable(title)) return false;
       if (!mounted) return false;
       setState(() {
         startsAt = choice.slot!.start;
@@ -1255,7 +1272,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                 style: FilledButton.styleFrom(minimumSize: Size.fromHeight(50)),
                 child: Text('다른 회차 선택'),
               ),
-            if (candidate!.timeMode == 'flexible')
+            if (candidate!.movable)
               OutlinedButton(
                 onPressed: () => Navigator.pop(sheetContext, 'edit'),
                 style: OutlinedButton.styleFrom(minimumSize: Size.fromHeight(48)),
@@ -1277,7 +1294,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     );
     if (action == 'keep') return true;
     if (action == 'session') unawaited(_chooseSession());
-    if (action == 'edit') unawaited(_editSchedule(forced: true));
+    if (action == 'edit') {
+      unawaited(candidate?.period != null ? _planPeriodVisit() : _editSchedule(forced: true));
+    }
     return false;
   }
 
@@ -1286,6 +1305,11 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     if (candidate!.sessions.length > 1 && selectedSession == null && startsAt == null) {
       _message('시간과 장소 중 하나를 선택해 주세요.');
       unawaited(_chooseSession());
+      return;
+    }
+    if (candidate!.period != null && startsAt == null) {
+      _message('방문할 날짜와 시간을 정해 주세요.');
+      unawaited(_planPeriodVisit());
       return;
     }
     final title = titleController.text.trim();
@@ -1336,11 +1360,15 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (!await _reviewCalendarPlacement(allCalendars, title, venue)) return;
       if (!await _confirmVenueContext()) return;
       venue = venueController.text.trim();
+      final period = candidate!.period;
+      final description = period == null ? candidate!.description
+          : [candidate!.description, cuePeriodNote(period, CueTimeSlot(startsAt!, endsAt!))]
+              .where((part) => part.isNotEmpty).join('\n\n');
       final event = calendar.Event(
         target.id,
         title: title,
         location: venue,
-        description: candidate!.description,
+        description: description,
         start: tz.TZDateTime.from(startsAt!, tz.UTC),
         end: tz.TZDateTime.from(endsAt!, tz.UTC),
         reminders: reminderMinutes == -1
@@ -1361,7 +1389,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           'startsAt': startsAt!.toUtc().toIso8601String(),
           'endsAt': endsAt!.toUtc().toIso8601String(),
           'category': selectedCategory,
-          'description': candidate!.description,
+          'description': description,
           'tags': candidate!.tags,
           'format': candidate!.format,
           'domains': candidate!.domains,
@@ -2414,6 +2442,10 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         for (var i = 0; i < event.sessions.length; i++) _sessionChoice(i, event.sessions[i]),
         SizedBox(height: 8),
       ],
+      if (event.period != null) ...[
+        _periodSummary(event.period!),
+        SizedBox(height: 12),
+      ],
       TextField(
         controller: venueController,
         onChanged: (_) => setState(() => venueConfirmed = false),
@@ -2439,9 +2471,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       ],
       SizedBox(height: 12),
       OutlinedButton.icon(
-        onPressed: () => _editSchedule(ambiguous: event.sessions.isEmpty && startsAt == null),
+        onPressed: event.period != null ? _planPeriodVisit
+            : () => _editSchedule(ambiguous: event.sessions.isEmpty && startsAt == null),
         icon: Icon(Icons.schedule_rounded),
-        label: Text(startsAt == null ? '날짜와 시간 선택' : _date(startsAt!)),
+        label: Text(startsAt == null
+            ? (event.period != null ? '방문 날짜·시간 정하기' : '날짜와 시간 선택')
+            : _date(startsAt!)),
         style: OutlinedButton.styleFrom(minimumSize: Size.fromHeight(54), foregroundColor: accent),
       ),
       if (startsAt != null) ...[
@@ -2513,6 +2548,11 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       return;
     }
     if (reviewStep == 2) {
+      if (candidate!.period != null && startsAt == null) {
+        _message('방문할 날짜와 시간을 정해 주세요.');
+        unawaited(_planPeriodVisit());
+        return;
+      }
       if (candidate!.sessions.length > 1 && selectedSession == null) {
         _message('참석할 시간과 장소를 선택해 주세요.');
         return;
@@ -2524,6 +2564,81 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (!await _confirmVenueContext()) return;
     }
     _setReviewStep(reviewStep + 1);
+  }
+
+  Widget _periodSummary(CuePeriod period) {
+    final hours = cueHoursSummary(period);
+    Widget line(IconData icon, String text) => Padding(
+      padding: EdgeInsets.only(top: 6),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, size: 17, color: accent),
+        SizedBox(width: 8),
+        Expanded(child: Text(text, style: TextStyle(color: ink, height: 1.4))),
+      ]),
+    );
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(14),
+      decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(16)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('기간 안에 자유롭게 방문하는 행사예요',
+            style: TextStyle(color: ink, fontWeight: FontWeight.w800)),
+        line(Icons.date_range_outlined, '${cuePeriodRange(period)} · ${period.lengthDays}일간'),
+        line(Icons.schedule_outlined, hours.isEmpty ? '운영 시간은 안내문에 없어요' : hours),
+        if (period.closedWeekdays.isNotEmpty)
+          line(Icons.block_outlined, '휴관 ${cueWeekdayRange(period.closedWeekdays)}요일'),
+        line(Icons.timelapse_outlined, '보통 ${period.visitMinutes}분 정도 머물러요'),
+      ]),
+    );
+  }
+
+  // 기간형 행사는 운영 시간 전체가 아니라 실제로 머물 방문 시간만 캘린더에 넣는다.
+  // 기간 동안의 내 일정을 한 번에 읽어 빈 날과 겹치는 시간을 함께 보여준다.
+  Future<void> _planPeriodVisit() async {
+    final period = candidate?.period;
+    if (period == null || !mounted) return;
+    final now = DateTime.now();
+    final from = period.startDate.isAfter(now) ? period.startDate : DateTime(now.year, now.month, now.day);
+    final limit = from.add(Duration(days: 180));
+    final until = (period.endDate.isBefore(limit) ? period.endDate : limit).add(Duration(days: 1));
+    var busy = <CueScheduleItem>[];
+    try {
+      final permission = await calendarPlugin.requestPermissions();
+      if (permission.data == true) {
+        final list = await calendarPlugin.retrieveCalendars();
+        final calendars = list.data?.where((item) => item.id != null).toList() ?? [];
+        busy = (await _readSchedules(calendars, from, until)).map((row) => row.item).toList();
+      }
+    } catch (_) {
+      // 캘린더를 읽지 못해도 날짜와 시간은 고를 수 있다.
+    }
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<CueTimeSlot>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.9),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: CuePeriodPlanner(
+              period: period,
+              busy: busy,
+              now: now,
+              initial: startsAt == null || endsAt == null ? null : CueTimeSlot(startsAt!, endsAt!),
+              onConfirm: (slot) => Navigator.pop(sheetContext, slot),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      startsAt = picked.start;
+      endsAt = picked.end;
+      selectedSession = null;
+    });
   }
 
   Future<void> _chooseSession() async {

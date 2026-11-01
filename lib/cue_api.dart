@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'cue_period.dart';
+
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabasePublishableKey = String.fromEnvironment(
   'SUPABASE_PUBLISHABLE_KEY',
@@ -51,6 +53,7 @@ class CueEvent {
     this.participationFee,
     this.timeMode = 'unknown',
     this.recommendedArrivalMinutes = 15,
+    this.period,
   });
   final String title;
   final String category;
@@ -62,9 +65,15 @@ class CueEvent {
   final String? applicationDeadline;
   final String? participationFee;
 
-  /// fixed, multiple, flexible, unknown 중 하나다.
+  /// fixed, multiple, flexible, period, unknown 중 하나다.
   final String timeMode;
   final int recommendedArrivalMinutes;
+
+  /// 전시·팝업처럼 기간 안에 자유롭게 방문하는 행사면 기간·운영 시간 정보가 있다.
+  final CuePeriod? period;
+
+  /// 시간을 사용자가 옮겨도 되는 행사인지. 공연·강연처럼 시작 시간이 정해진 행사는 false다.
+  bool get movable => timeMode == 'flexible' || period != null;
 
   factory CueEvent.fromJson(Map<String, dynamic> json) => CueEvent(
     title: json['title'] as String? ?? '',
@@ -80,6 +89,7 @@ class CueEvent {
     timeMode: json['timeMode'] as String? ?? 'unknown',
     recommendedArrivalMinutes:
         (json['recommendedArrivalMinutes'] as num?)?.toInt() ?? 15,
+    period: CuePeriod.fromJson(json['period'] as Map<String, dynamic>?),
     sessions: (json['sessions'] as List<dynamic>? ?? [])
         .map((e) => CueSession.fromJson(e as Map<String, dynamic>))
         .toList(),

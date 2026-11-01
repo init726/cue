@@ -86,3 +86,44 @@ test('sessions whose date is not printed on the flyer are dropped so the user pi
   assert.deepEqual(event.sessions.map((item) => item.startsAt), ['2026-11-04T10:00:00+09:00', '2026-11-07T10:00:00+09:00']);
   assert.equal(cleanExtraction({ is_event: true, title: '캠프', category: '교육', description: '', sessions: [session('', 8)] }).needsManualDetails, true);
 });
+
+test('free-visit exhibitions become one period with opening hours instead of daily sessions', () => {
+  const event = cleanExtraction({
+    is_event: true, title: '빛의 정원展', category: '전시', description: '', time_mode: 'period', tags: [],
+    sessions: [{ label: '', starts_at: '2026-11-03T10:00:00+09:00', ends_at: '2026-11-03T18:00:00+09:00',
+      venue: '서울시립미술관', date_text: '11.3', time_text: '10:00~18:00' }],
+    period: { start_date: '2026-11-01', end_date: '2027-02-28', date_text: '2026.11.1 – 2027.2.28',
+      venue: '서울시립미술관', hours_text: '화–일 10:00–18:00, 금 ~21:00 (입장 마감 17:30)',
+      hours: [
+        { weekdays: [1, 2, 3, 4, 6, 7], open: '10:00', close: '18:00', last_entry: '17:30' },
+        { weekdays: [5], open: '10:00', close: '21:00', last_entry: '' },
+        { weekdays: [9], open: '10:00', close: '18:00', last_entry: '' },
+      ],
+      closed_weekdays: [1], closed_dates: ['2027-01-01', '2026-10-01', 'soon'], visit_minutes: 0 },
+  });
+  assert.equal(event.timeMode, 'period');
+  assert.equal(event.sessions.length, 0);
+  assert.equal(event.needsManualDetails, false);
+  assert.equal(event.fieldStatus.time, 'known');
+  assert.deepEqual(event.period.hours, [
+    { weekdays: [2, 3, 4, 6, 7], open: '10:00', close: '18:00', lastEntry: '17:30' },
+    { weekdays: [5], open: '10:00', close: '21:00', lastEntry: null },
+  ]);
+  assert.deepEqual(event.period.closedWeekdays, [1]);
+  assert.deepEqual(event.period.closedDates, ['2027-01-01']);
+  assert.equal(event.period.visitMinutes, 90);
+});
+
+test('a period needs printed dates, and unprinted opening hours are left for the user', () => {
+  const build = (period) => cleanExtraction({
+    is_event: true, title: '팝업스토어', category: '기타', description: '', tags: ['팝업'], time_mode: 'period',
+    sessions: [], period: { start_date: '2026-11-05', end_date: '2026-11-20', date_text: '11.5 – 11.20',
+      venue: '성수 S팩토리', hours: [{ weekdays: [1, 2, 3, 4, 5, 6, 7], open: '11:00', close: '20:00', last_entry: '' }],
+      hours_text: '', closed_weekdays: [], closed_dates: [], visit_minutes: 0, ...period },
+  });
+  assert.deepEqual(build({}).period.hours, []);
+  assert.equal(build({}).period.visitMinutes, 45);
+  assert.equal(build({ date_text: '상시 운영' }).period, null);
+  assert.equal(build({ end_date: '2026-11-05' }).period, null);
+  assert.equal(build({ end_date: '2026-02-30' }).period, null);
+});

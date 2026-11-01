@@ -175,6 +175,22 @@ const sessionSchema = {
     date_text: { type: 'string' }, time_text: { type: 'string' },
   }, required: ['label', 'starts_at', 'ends_at', 'venue', 'date_text', 'time_text'],
 };
+const hoursSchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    weekdays: { type: 'array', items: { type: 'integer', enum: [1, 2, 3, 4, 5, 6, 7] } },
+    open: { type: 'string' }, close: { type: 'string' }, last_entry: { type: 'string' },
+  }, required: ['weekdays', 'open', 'close', 'last_entry'],
+};
+const periodSchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    start_date: { type: 'string' }, end_date: { type: 'string' }, date_text: { type: 'string' },
+    venue: { type: 'string' }, hours: { type: 'array', items: hoursSchema }, hours_text: { type: 'string' },
+    closed_weekdays: { type: 'array', items: { type: 'integer', enum: [1, 2, 3, 4, 5, 6, 7] } },
+    closed_dates: { type: 'array', items: { type: 'string' } }, visit_minutes: { type: 'integer' },
+  }, required: ['start_date', 'end_date', 'date_text', 'venue', 'hours', 'hours_text', 'closed_weekdays', 'closed_dates', 'visit_minutes'],
+};
 const extractionSchema = {
   type: 'object', additionalProperties: false,
   properties: {
@@ -184,10 +200,10 @@ const extractionSchema = {
     application_deadline: { type: 'string' }, participation_fee: { type: 'string' },
     tags: { type: 'array', items: { type: 'string' } },
     description: { type: 'string' },
-    time_mode: { type: 'string', enum: ['fixed', 'multiple', 'flexible', 'unknown'] },
+    time_mode: { type: 'string', enum: ['fixed', 'multiple', 'flexible', 'period', 'unknown'] },
     recommended_arrival_minutes: { type: 'integer', enum: [0, 15, 30, 60] },
-    sessions: { type: 'array', items: sessionSchema },
-  }, required: ['is_event', 'title', 'category', 'format', 'domains', 'application_deadline', 'participation_fee', 'tags', 'description', 'time_mode', 'recommended_arrival_minutes', 'sessions'],
+    sessions: { type: 'array', items: sessionSchema }, period: periodSchema,
+  }, required: ['is_event', 'title', 'category', 'format', 'domains', 'application_deadline', 'participation_fee', 'tags', 'description', 'time_mode', 'recommended_arrival_minutes', 'sessions', 'period'],
 };
 
 async function askOpenAI(sourceParts, instruction, schema, name) {
@@ -393,12 +409,16 @@ export const server = http.createServer(async (req, res) => {
       const duration = [60, 120, 180].includes(Number(body.defaultDurationMinutes))
         ? Number(body.defaultDurationMinutes) : 120;
       const extracted = await askOpenAI(sourceParts,
-        `행사 정보를 한국어로 추출. 현재 시각 ${new Date().toISOString()}, 사용자 UTC 오프셋 ${offset}분. format은 행사 형식, domains는 실제 주제 분야, tags는 세부 키워드로 분리. 제목의 구체적인 핵심어를 최우선으로 분류하고 부대 프로그램 때문에 주제를 바꾸지 마세요. 예를 들어 커피 페스티벌에 음악 공연이 있어도 category는 커피·와인, domains는 음식입니다. AI·교육 정책 토론회는 토론회 형식과 AI·교육·정책 분야이고 미술 전시가 아님. 행사 주제 키워드는 tags에 최대 8개. 신청 마감일과 참가비가 명시되지 않았다면 빈 문자열로 반환하고 만들지 말 것. time_mode는 정확한 시작 시간이 적힌 행사는 fixed, 선택 가능한 회차가 여러 개면 multiple, 명시된 운영 시간 안에 자유롭게 방문하는 행사만 flexible, 시간을 확인할 수 없으면 unknown. 공연·경기·강연·토론·세미나는 임의로 flexible로 보지 마세요. recommended_arrival_minutes는 공연·경기·등록 절차가 있으면 30, 강연·세미나는 15, 자유 방문은 0을 기본으로 하되 안내문 내용에 따라 0·15·30·60 중 선택. sessions 규칙: 사용자가 그중 하나를 골라 참석·방문할 수 있는 후보를 빠짐없이 모두 나열하세요. (1) 날짜가 다른 회차·공연·일차, (2) 같은 날이라도 시간이 떨어진 회차(오전반/오후반 등), (3) 장소가 다른 회차나 동시 개최 장소는 각각 별도 세션입니다. 여러 날에 걸쳐 매일 같은 시간에 운영되는 기간형 행사는 날짜마다 별도 세션으로 나누되 현재 이후 날짜만 최대 12개까지 만드세요. 반대로 한 회차 안의 식순·프로그램·출연 순서(예: 서막공연, 개막식, 축하공연)처럼 같은 날 같은 장소에서 이어지는 항목은 별도 세션이 아니라 하나의 세션으로 합쳐 시작은 첫 순서 시작 시각, 종료는 마지막 순서 종료 시각으로 하세요. 각 세션의 date_text에는 안내문에 실제로 적힌 날짜 표기를 그대로 옮겨 쓰고, time_text에는 실제로 적힌 시간 표기(예: 오후 2시, 14:00~16:00)를 그대로 옮겨 쓰세요. 날짜나 시간이 없으면 각각 빈 문자열로 하세요. 특히 시간이 없는데 00:00, 0시, 자정을 대입하지 마세요. 시간을 확인할 수 없으면 starts_at과 ends_at도 빈 문자열로 반환하세요. 안내문에 없는 날짜를 오늘·내일 등 현재 날짜로 추측해 채우지 마세요. 각 세션의 label에는 서울·부산, 2일차, 오전반처럼 후보를 구분하는 짧은 이름을 쓰고 후보가 하나뿐이면 빈 문자열로 하세요. 장소를 알 수 없는 후보만 제외하세요. 식순 요약은 description에 쓰세요. title은 행사 전체 이름이며 개별 프로그램 이름이 아님. 시작/종료는 시간이 실제로 확인된 경우에만 ISO 8601 오프셋 포함. 종료 시간만 없으면 시작+${duration}분. 연도가 불명확하면 현재 이후 가장 가까운 연도만 추론. 입력에 없는 제목은 만들지 말 것.`,
+        `행사 정보를 한국어로 추출. 현재 시각 ${new Date().toISOString()}, 사용자 UTC 오프셋 ${offset}분. format은 행사 형식, domains는 실제 주제 분야, tags는 세부 키워드로 분리. 제목의 구체적인 핵심어를 최우선으로 분류하고 부대 프로그램 때문에 주제를 바꾸지 마세요. 예를 들어 커피 페스티벌에 음악 공연이 있어도 category는 커피·와인, domains는 음식입니다. AI·교육 정책 토론회는 토론회 형식과 AI·교육·정책 분야이고 미술 전시가 아님. 행사 주제 키워드는 tags에 최대 8개. 신청 마감일과 참가비가 명시되지 않았다면 빈 문자열로 반환하고 만들지 말 것. time_mode는 정확한 시작 시간이 적힌 행사는 fixed, 선택 가능한 회차가 여러 개면 multiple, 명시된 운영 시간 안에 자유롭게 방문하는 행사만 flexible, 시간을 확인할 수 없으면 unknown. 공연·경기·강연·토론·세미나는 임의로 flexible로 보지 마세요. recommended_arrival_minutes는 공연·경기·등록 절차가 있으면 30, 강연·세미나는 15, 자유 방문은 0을 기본으로 하되 안내문 내용에 따라 0·15·30·60 중 선택. sessions 규칙: 사용자가 그중 하나를 골라 참석·방문할 수 있는 후보를 빠짐없이 모두 나열하세요. (1) 날짜가 다른 회차·공연·일차, (2) 같은 날이라도 시간이 떨어진 회차(오전반/오후반 등), (3) 장소가 다른 회차나 동시 개최 장소는 각각 별도 세션입니다. 전시·팝업스토어·박람회·페스티벌처럼 여러 날에 걸친 기간 동안 운영 시간 안에 자유롭게 방문하는 행사는 time_mode를 period로 하고 sessions는 빈 배열로 두고 period를 채우세요. period.start_date와 end_date는 YYYY-MM-DD, date_text는 안내문에 적힌 기간 표기 그대로, venue는 장소, hours는 요일별 운영 시간(weekdays는 월=1…일=7, open·close·last_entry는 HH:MM 24시간제, 입장 마감이 없으면 last_entry는 빈 문자열), hours_text는 안내문에 적힌 운영 시간 표기 그대로, closed_weekdays는 정기 휴관 요일, closed_dates는 적힌 휴관일(YYYY-MM-DD), visit_minutes는 안내문에 관람 소요 시간이 있을 때만 분 단위로 쓰고 없으면 0. 운영 시간이 적혀 있지 않으면 hours는 빈 배열, hours_text는 빈 문자열로 두고 시간을 만들지 마세요. 기간형이 아니면 period의 문자열은 모두 빈 문자열, 배열은 빈 배열, visit_minutes는 0으로 하세요. 공연·강연처럼 정해진 시작 시간이 있는 행사가 여러 날 열리면 period가 아니라 날짜마다 별도 세션으로 나누되 현재 이후 날짜만 최대 12개까지 만드세요. 반대로 한 회차 안의 식순·프로그램·출연 순서(예: 서막공연, 개막식, 축하공연)처럼 같은 날 같은 장소에서 이어지는 항목은 별도 세션이 아니라 하나의 세션으로 합쳐 시작은 첫 순서 시작 시각, 종료는 마지막 순서 종료 시각으로 하세요. 각 세션의 date_text에는 안내문에 실제로 적힌 날짜 표기를 그대로 옮겨 쓰고, time_text에는 실제로 적힌 시간 표기(예: 오후 2시, 14:00~16:00)를 그대로 옮겨 쓰세요. 날짜나 시간이 없으면 각각 빈 문자열로 하세요. 특히 시간이 없는데 00:00, 0시, 자정을 대입하지 마세요. 시간을 확인할 수 없으면 starts_at과 ends_at도 빈 문자열로 반환하세요. 안내문에 없는 날짜를 오늘·내일 등 현재 날짜로 추측해 채우지 마세요. 각 세션의 label에는 서울·부산, 2일차, 오전반처럼 후보를 구분하는 짧은 이름을 쓰고 후보가 하나뿐이면 빈 문자열로 하세요. 장소를 알 수 없는 후보만 제외하세요. 식순 요약은 description에 쓰세요. title은 행사 전체 이름이며 개별 프로그램 이름이 아님. 시작/종료는 시간이 실제로 확인된 경우에만 ISO 8601 오프셋 포함. 종료 시간만 없으면 시작+${duration}분. 연도가 불명확하면 현재 이후 가장 가까운 연도만 추론. 입력에 없는 제목은 만들지 말 것.`,
         extractionSchema, 'event_details');
       const event = cleanExtraction(extracted);
       if (!event) return send(res, 200, { status: 'not_event' });
       // 인식된 일정이 모두 이미 지났다면 후보를 만들지 않고 분석을 취소한다.
-      if (event.sessions.length) {
+      if (event.period) {
+        const today = new Date(Date.now() + offset * 60000).toISOString().slice(0, 10);
+        if (event.period.endDate < today) return send(res, 200, { status: 'past_event', title: event.title,
+          endedAt: new Date(Date.parse(`${event.period.endDate}T23:59:00Z`) - offset * 60000).toISOString() });
+      } else if (event.sessions.length) {
         const upcoming = event.sessions.filter((session) => Date.parse(session.endsAt) > Date.now());
         if (!upcoming.length) return send(res, 200, { status: 'past_event', title: event.title,
           endedAt: event.sessions.map((session) => session.endsAt).sort().at(-1) });

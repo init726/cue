@@ -152,8 +152,8 @@ const _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
 String dayLabel(DateTime date) =>
     '${date.month}월 ${date.day}일 ${_weekdays[date.weekday - 1]}요일';
 
-class _Palette {
-  _Palette(BuildContext context) : dark = Theme.of(context).brightness == Brightness.dark;
+class CuePalette {
+  CuePalette(BuildContext context) : dark = Theme.of(context).brightness == Brightness.dark;
 
   final bool dark;
 
@@ -231,7 +231,7 @@ class _RouteViewState extends State<RouteView> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = _Palette(context);
+    final palette = CuePalette(context);
     final now = widget.now ?? DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final days = buildRoute(widget.events);
@@ -255,7 +255,7 @@ class _RouteViewState extends State<RouteView> {
     );
   }
 
-  Widget _nextCueCard(_Palette palette, NextCue next, DateTime now) {
+  Widget _nextCueCard(CuePalette palette, NextCue next, DateTime now) {
     final stop = next.stop;
     final label = next.inProgress
         ? 'NOW · ${clock(stop.end)}까지'
@@ -285,7 +285,7 @@ class _RouteViewState extends State<RouteView> {
     );
   }
 
-  Widget _weekStrip(_Palette palette, DateTime today, List<RouteDay> days) {
+  Widget _weekStrip(CuePalette palette, DateTime today, List<RouteDay> days) {
     final byDate = {for (final day in days) day.date: day};
     return Row(
       children: [
@@ -295,7 +295,7 @@ class _RouteViewState extends State<RouteView> {
     );
   }
 
-  Widget _weekDay(_Palette palette, DateTime date, Map<DateTime, RouteDay> byDate, bool isToday) {
+  Widget _weekDay(CuePalette palette, DateTime date, Map<DateTime, RouteDay> byDate, bool isToday) {
     final day = byDate[DateTime(date.year, date.month, date.day)];
     final count = day?.stops.length ?? 0;
     final conflict = day != null && (day.hasFork || day.hasTight);
@@ -347,7 +347,7 @@ class _RouteViewState extends State<RouteView> {
     );
   }
 
-  Widget _daySection(_Palette palette, RouteDay day, DateTime today) {
+  Widget _daySection(CuePalette palette, RouteDay day, DateTime today) {
     final key = dayKeys.putIfAbsent(day.date, GlobalKey.new);
     final offset = day.date.difference(today).inDays;
     final badge = offset == 0 ? '오늘' : offset == 1 ? '내일' : null;
@@ -406,7 +406,7 @@ class _RouteViewState extends State<RouteView> {
   }
 
   /// branch는 겹치는 일정에서 고를 수 있는 길의 이름(A, B, …)이다.
-  Widget _stopRow(_Palette palette, RouteStop stop,
+  Widget _stopRow(CuePalette palette, RouteStop stop,
       {String? branch, bool top = true, bool bottom = true}) {
     final expanded = expandedId == stop.id;
     final busy = widget.busyEventId == stop.id;
@@ -507,7 +507,7 @@ class _RouteViewState extends State<RouteView> {
     );
   }
 
-  Widget _forkRow(_Palette palette, RouteCluster cluster, {required bool top}) => IntrinsicHeight(
+  Widget _forkRow(CuePalette palette, RouteCluster cluster, {required bool top}) => IntrinsicHeight(
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -571,7 +571,7 @@ class _RouteViewState extends State<RouteView> {
     ),
   );
 
-  Widget _linkRow(_Palette palette, RouteLink link) {
+  Widget _linkRow(CuePalette palette, RouteLink link) {
     final (icon, text, color) = switch (link.kind) {
       LinkKind.sameVenue => (Icons.place_outlined,
           link.gap.inMinutes <= 0 ? '같은 장소에서 바로 이어져요' : '같은 장소 · ${spanLabel(link.gap)} 쉬어가요',
@@ -613,7 +613,7 @@ class _RouteViewState extends State<RouteView> {
     );
   }
 
-  Widget _pastSection(_Palette palette, List<RouteDay> past) {
+  Widget _pastSection(CuePalette palette, List<RouteDay> past) {
     final stops = [for (final day in past.reversed) ...day.stops.reversed];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -650,7 +650,7 @@ class _RouteViewState extends State<RouteView> {
     );
   }
 
-  Widget _quiet(_Palette palette, String title, String text) => Container(
+  Widget _quiet(CuePalette palette, String title, String text) => Container(
     width: double.infinity,
     padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
     decoration: BoxDecoration(
@@ -669,7 +669,7 @@ class _RouteViewState extends State<RouteView> {
     ),
   );
 
-  Widget _chip(_Palette palette, String text, Color color, Color background) => Container(
+  Widget _chip(CuePalette palette, String text, Color color, Color background) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
     decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(50)),
     child: Text(text, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w700)),

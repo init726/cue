@@ -60,6 +60,7 @@ void main() {
       DateTime(2026, 11, 1, 14),
       DateTime(2026, 11, 1, 16),
       busy,
+      now: DateTime(2026, 10, 31, 9),
     );
     expect(slots, isNotEmpty);
     expect(slots.first.start, DateTime(2026, 11, 1, 16));
