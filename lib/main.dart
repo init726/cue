@@ -19,6 +19,7 @@ import 'cue_event_identity.dart';
 import 'cue_categories.dart';
 import 'cue_location.dart';
 import 'cue_map_launcher.dart';
+import 'cue_map_page.dart';
 import 'cue_period.dart';
 import 'cue_period_planner.dart';
 import 'cue_place_search.dart';
@@ -2124,7 +2125,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       now: now,
       moreCount: upcoming.length - 1,
       weather: latitude == null || longitude == null ? null : _weather(latitude, longitude, start),
-      onOpenMap: () => _openMap(next),
+      onOpenMap: () => _showOnMap([next], title: next['title'] as String? ?? '다가오는 일정'),
       onDirections: latitude == null || longitude == null ? null : () => _openMap(next, directions: true),
       onOpenSchedule: () => _selectTab(1),
     );
@@ -3035,6 +3036,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           onKeep: _keepOnly,
           focusDate: routeFocusDate,
           focusRequest: routeFocusRequest,
+          onShowMap: (events, day) => _showOnMap(events, title: '${day.month}월 ${day.day}일 동선', route: true),
         )
       else
         for (final event in _byDate(saved)) ...[
@@ -3644,6 +3646,27 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   Future<void> _openMap(Map<String, dynamic> event, {bool directions = false}) =>
       _openInMap(_mapTarget(event), directions: directions);
 
+  // 위치를 아는 일정은 앱 안 지도(iOS)로 보여준다. 지도를 띄울 수 없으면 지도 앱으로 연다.
+  Future<void> _showOnMap(List<Map<String, dynamic>> events, {required String title, bool route = false, int initial = 0}) async {
+    final stops = events.map(CueMapStop.from).whereType<CueMapStop>().toList();
+    if (!CueMapView.supported || stops.isEmpty) {
+      if (events.isNotEmpty) await _openMap(events[initial.clamp(0, events.length - 1)]);
+      return;
+    }
+    final start = events[initial.clamp(0, events.length - 1)];
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => CueMapPage(
+      title: title,
+      stops: stops,
+      route: route,
+      initial: stops.indexWhere((stop) => identical(stop.event, start)).clamp(0, stops.length - 1),
+      onDirections: (stop) => _openMap(stop.event, directions: true),
+      onOpenExternal: (stop) => _openMap(stop.event),
+      weatherFor: (stop) => stop.start == null
+          ? Future.value(null)
+          : _weather(stop.latitude, stop.longitude, stop.start),
+    )));
+  }
+
   // 설치된 지도 앱으로 바로 연다. 처음 한 번만 앱을 고르고, 고른 앱은 설정에서 바꿀 수 있다.
   Future<void> _openInMap(CueMapTarget target, {bool directions = false}) async {
     final installed = await cueInstalledMapApps();
@@ -3718,7 +3741,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                     (event['place'] as Map<String, dynamic>)['category'] as String? ?? '',
                   ].where((part) => part.isNotEmpty).join(' · ')
                 : null,
-            onOpenMap: (event['venue'] as String? ?? '').trim().isEmpty ? null : () => _openMap(event),
+            onOpenMap: (event['venue'] as String? ?? '').trim().isEmpty ? null
+                : () => _showOnMap([event], title: event['venue'] as String? ?? '장소'),
           ),
           // 둘러보기 묶음은 머리말이 이유를 설명하므로 카드마다 같은 문장을 반복하지 않는다.
           if (recommended && event['section'] != 'explore' &&

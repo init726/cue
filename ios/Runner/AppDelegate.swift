@@ -14,6 +14,9 @@ import CoreLocation
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "CueMapView") {
+      registrar.register(CueMapFactory(messenger: registrar.messenger()), withId: "cue/map")
+    }
     let shareChannel = FlutterMethodChannel(name: "cue/shared", binaryMessenger: engineBridge.applicationRegistrar.messenger())
     shareChannel.setMethodCallHandler { call, result in
       guard call.method == "takeSharedFile" else { result(FlutterMethodNotImplemented); return }

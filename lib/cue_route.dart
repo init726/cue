@@ -184,6 +184,7 @@ class RouteView extends StatefulWidget {
     this.focusDate,
     this.focusRequest = 0,
     this.now,
+    this.onShowMap,
   });
 
   final List<Map<String, dynamic>> events;
@@ -197,6 +198,9 @@ class RouteView extends StatefulWidget {
   /// focusRequest가 바뀔 때마다 focusDate의 하루로 스크롤한다.
   final DateTime? focusDate;
   final int focusRequest;
+
+  /// 하루 일정을 지도에 순서대로 띄운다. 위치를 아는 일정이 있는 날에만 버튼을 보여준다.
+  final void Function(List<Map<String, dynamic>> events, DateTime day)? onShowMap;
 
   /// 테스트에서 현재 시각을 고정할 때 쓴다.
   final DateTime? now;
@@ -389,6 +393,20 @@ class _RouteViewState extends State<RouteView> {
                 decoration: BoxDecoration(color: palette.colors.accent, borderRadius: BorderRadius.circular(50)),
                 child: Text(badge, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800,
                     color: palette.colors.onAccent)),
+              ),
+            if (widget.onShowMap != null && stops.any((stop) => stop.event['locationLatitude'] != null))
+              InkWell(
+                onTap: () => widget.onShowMap!([for (final stop in stops) stop.event], day.date),
+                borderRadius: BorderRadius.circular(50),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(color: palette.mint, borderRadius: BorderRadius.circular(50)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.map_outlined, size: 13, color: palette.accent),
+                    const SizedBox(width: 4),
+                    Text('지도로 보기', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: palette.accent)),
+                  ]),
+                ),
               ),
           ],
         ),
