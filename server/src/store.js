@@ -1,4 +1,4 @@
-import { communityContext, eventOrigin } from './community.js';
+import { communityContext, eventOrigin, placeFromRow } from './community.js';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -74,6 +74,9 @@ for (const [column, type] of [['location_latitude', 'REAL'], ['location_longitud
 for (const [column, type] of [['origin_kind', "TEXT NOT NULL DEFAULT 'legacy'"], ['sharing_user_id', 'TEXT REFERENCES users(id) ON DELETE CASCADE'], ['share_source_event_id', 'TEXT REFERENCES events(id) ON DELETE CASCADE'], ['community_school', "TEXT NOT NULL DEFAULT ''"], ['community_region', "TEXT NOT NULL DEFAULT ''"], ['community_age_band', "TEXT NOT NULL DEFAULT ''"]]) {
   if (!db.prepare('PRAGMA table_info(events)').all().some((row) => row.name === column)) db.exec(`ALTER TABLE events ADD COLUMN ${column} ${type}`);
 }
+for (const column of ['place_provider', 'place_id', 'place_category']) {
+  if (!db.prepare('PRAGMA table_info(events)').all().some((row) => row.name === column)) db.exec(`ALTER TABLE events ADD COLUMN ${column} TEXT`);
+}
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS event_share_owner_idx ON events(sharing_user_id,share_source_event_id)');
 const now = () => new Date().toISOString();
 const bool = (value) => value === 1;
@@ -84,7 +87,7 @@ const asEvent = (row) => ({
   tags: JSON.parse(row.tags || '[]'), ...classifyEvent({ ...row, tags: JSON.parse(row.tags || '[]'), domains: JSON.parse(row.domains || '[]') }), applicationDeadline: row.application_deadline, participationFee: row.participation_fee,
   locationAddress: row.location_address, sourceUrl: row.source_url,
   locationLatitude: row.location_latitude, locationLongitude: row.location_longitude,
-  originKind: eventOrigin(row), sharingUserId: row.sharing_user_id,
+  originKind: eventOrigin(row), sharingUserId: row.sharing_user_id, place: placeFromRow(row),
   community: { school: row.community_school || '', region: row.community_region || '', ageBand: row.community_age_band || '' },
   ...(row.calendar_id != null ? { calendarId: row.calendar_id } : {}),
   ...(row.calendar_event_id != null ? { calendarEventId: row.calendar_event_id } : {}),
@@ -100,6 +103,8 @@ function insertEvent(event, ownerId, sourceType) {
       event.venue, event.locationAddress || null, event.locationLatitude ?? null, event.locationLongitude ?? null,
       event.sourceUrl || null, sourceType, timestamp, timestamp, event.format || '기타', JSON.stringify(event.domains || []), event.participationFee || null,
       (event.tags || []).includes('시연용') ? 'demo' : event.originKind === 'web' ? 'web' : 'catalog');
+  if (event.placeId) db.prepare('UPDATE events SET place_provider=?,place_id=?,place_category=? WHERE id=?')
+    .run(event.placeProvider, event.placeId, event.placeCategory || null, event.id);
   db.prepare(`INSERT INTO event_sessions(id,event_id,start_at,end_at,location_name) VALUES(?,?,?,?,?)`)
     .run(randomUUID(), event.id, event.startsAt, event.endsAt, event.venue);
 }
@@ -203,7 +208,13 @@ export const store = {
       const existing = db.prepare('SELECT id FROM events WHERE sharing_user_id=? AND share_source_event_id=?').get(userId,eventId);
       const id = existing?.id || randomUUID();
       if (existing) return { id };
-      insertEvent({ ...asEvent(source), id, locationAddress: null }, null, 'catalog');
+      const event = asEvent(source);
+      const verified = Boolean(source.place_id);
+      const blur = (value) => value == null ? null : Math.round(value * 100) / 100;
+      insertEvent({ ...event, id, locationAddress: verified ? event.locationAddress : null,
+        locationLatitude: verified ? event.locationLatitude : blur(event.locationLatitude),
+        locationLongitude: verified ? event.locationLongitude : blur(event.locationLongitude),
+        placeProvider: source.place_provider, placeId: source.place_id, placeCategory: source.place_category }, null, 'catalog');
       const context = this.profile(userId);
       db.prepare("UPDATE events SET origin_kind='shared',sharing_user_id=?,share_source_event_id=?,community_school=?,community_region=?,community_age_band=? WHERE id=?").run(userId,eventId,context.school,context.region,context.ageBand,id);
       return { id };
@@ -237,6 +248,8 @@ export const store = {
         .run(event.title,event.description,event.category,JSON.stringify(event.tags || []),event.startsAt,event.endsAt,
           event.applicationDeadline || null,event.venue,event.locationAddress || null,event.locationLatitude ?? null,
           event.locationLongitude ?? null,event.sourceUrl || null,now(),event.format,JSON.stringify(event.domains || []),event.participationFee || null,eventId,userId);
+      if (Object.hasOwn(event, 'placeId')) db.prepare('UPDATE events SET place_provider=?,place_id=?,place_category=? WHERE id=? AND owner_user_id=?')
+        .run(event.placeProvider, event.placeId, event.placeCategory, eventId, userId);
       db.prepare(`UPDATE event_sessions SET start_at=?,end_at=?,location_name=? WHERE event_id=?`)
         .run(event.startsAt,event.endsAt,event.venue,eventId);
       db.prepare(`UPDATE user_events SET calendar_id=?,calendar_event_id=?,reminder_minutes=?,updated_at=? WHERE user_id=? AND event_id=?`)

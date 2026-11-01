@@ -159,8 +159,13 @@ export function validateSavedEvent(body) {
   const hasCoordinates = Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
     Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
   const classification = classifyEvent(body);
+  // 장소 연결은 보냈을 때만 담는다. null을 보내면 연결을 끊는다(장소 이름을 직접 바꾼 경우).
+  const place = !Object.hasOwn(body, 'placeId') ? {}
+    : body.placeProvider === 'kakao' && /^\d{1,20}$/.test(String(body.placeId || ''))
+      ? { placeProvider: 'kakao', placeId: String(body.placeId), placeCategory: String(body.placeCategory || '').trim().slice(0, 60) || null }
+      : { placeProvider: null, placeId: null, placeCategory: null };
   return {
-    id: randomUUID(), title, venue,
+    id: randomUUID(), title, venue, ...place,
     startsAt: new Date(start).toISOString(), endsAt: new Date(end).toISOString(),
     category: categories.includes(body.category) ? body.category : '기타',
     tags, ...classification, applicationDeadline: applicationDeadline ? new Date(applicationDeadline).toISOString() : null,

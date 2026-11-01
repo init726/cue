@@ -1,4 +1,4 @@
-import { eventOrigin } from './community.js';
+import { eventOrigin, placeFromRow } from './community.js';
 import { randomUUID } from 'node:crypto';
 import { interestSignals, memoryFromSignal, rankRecommendations } from './personalization.js';
 import { classifyEvent } from './classification.js';
@@ -26,7 +26,7 @@ const eventFromRow = (row, userEvent = {}) => ({
   locationAddress: row.location_address, sourceUrl: row.source_url,
   locationLatitude: row.location_latitude == null ? null : Number(row.location_latitude),
   locationLongitude: row.location_longitude == null ? null : Number(row.location_longitude),
-  originKind: eventOrigin(row), sharingUserId: row.sharing_user_id,
+  originKind: eventOrigin(row), sharingUserId: row.sharing_user_id, place: placeFromRow(row),
   community: { school: row.community_school || '', region: row.community_region || '', ageBand: row.community_age_band || '' },
   ...(userEvent.calendar_id != null ? { calendarId: userEvent.calendar_id } : {}),
   ...(userEvent.calendar_event_id != null ? { calendarEventId: userEvent.calendar_event_id } : {}),
@@ -42,6 +42,9 @@ const eventRow = (event, userId, sourceType = 'scan') => ({
   location_longitude: event.locationLongitude ?? null,
   source_url: event.sourceUrl || null, source_type: sourceType,
   origin_kind: (event.tags || []).includes('시연용') ? 'demo' : event.originKind === 'web' ? 'web' : 'catalog',
+  // 장소 열은 장소를 보냈을 때만 쓴다. 마이그레이션 전 서버에서도 일반 저장이 깨지지 않는다.
+  ...(Object.hasOwn(event, 'placeId') ? { place_provider: event.placeProvider, place_id: event.placeId,
+    place_category: event.placeCategory } : {}),
   created_at: event.createdAt || now(), updated_at: now(),
 });
 

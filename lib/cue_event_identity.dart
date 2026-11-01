@@ -10,6 +10,9 @@ class CueEventIdentity extends StatelessWidget {
     this.startsAt,
     this.sourceKind,
     this.participationFee,
+    this.tags = const [],
+    this.placeDetail,
+    this.onOpenMap,
   });
 
   final String title;
@@ -18,6 +21,13 @@ class CueEventIdentity extends StatelessWidget {
   final DateTime? startsAt;
   final String? sourceKind;
   final String? participationFee;
+
+  /// 행사 키워드. 종류와 겹치지 않는 것만 최대 세 개를 #태그로 보여준다.
+  final List<String> tags;
+
+  /// 지도에서 확인한 장소의 주소·종류. 있으면 장소 아래에 한 줄 더 보여준다.
+  final String? placeDetail;
+  final VoidCallback? onOpenMap;
 
   @override
   Widget build(BuildContext context) {
@@ -90,16 +100,35 @@ class CueEventIdentity extends StatelessWidget {
                   style: TextStyle(fontSize: 12, color: muted, height: 1.6)),
             if (venue.isNotEmpty) ...[
               const SizedBox(height: 3),
-              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Icon(Icons.place_outlined, size: 14, color: muted),
-                const SizedBox(width: 3),
-                Expanded(child: Text(venue, style: TextStyle(fontSize: 12, color: muted, height: 1.5))),
-              ]),
+              InkWell(
+                onTap: onOpenMap,
+                borderRadius: BorderRadius.circular(6),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(placeDetail == null ? Icons.place_outlined : Icons.verified_outlined, size: 14,
+                      color: placeDetail == null ? muted : blue),
+                  const SizedBox(width: 3),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(venue, style: TextStyle(fontSize: 12, color: muted, height: 1.5)),
+                    if (placeDetail?.isNotEmpty == true)
+                      Text(placeDetail!, style: TextStyle(fontSize: 11, color: muted.withValues(alpha: 0.8), height: 1.4)),
+                  ])),
+                  if (onOpenMap != null) ...[
+                    const SizedBox(width: 4),
+                    Text('지도', style: TextStyle(fontSize: 11, color: blue, fontWeight: FontWeight.w600)),
+                  ],
+                ]),
+              ),
             ],
             const SizedBox(height: 10),
             Wrap(spacing: 6, runSpacing: 6, children: [
               chip(category),
               if (participationFee?.trim().isNotEmpty == true) chip(participationFee!.trim()),
+              for (final tag in tags
+                  .map((tag) => tag.trim().replaceAll('#', ''))
+                  .where((tag) => tag.isNotEmpty && tag != category && tag != '시연용')
+                  .toSet()
+                  .take(3))
+                chip('#$tag'),
             ]),
           ],
         )),

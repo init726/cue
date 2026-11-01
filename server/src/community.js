@@ -40,6 +40,16 @@ export function communityMatch(event, context = {}) {
       : age ? '같은 연령대의 사용자가 공유한 행사예요.' : '' };
 }
 
+import { placeMapUrl } from './places.js';
+
+// 확인된 장소면 이름·주소·종류와 지도 링크를 묶어 보여준다. 확인되지 않은 장소는 이름만 있다.
+export function placeFromRow(row) {
+  if (!row.place_id) return null;
+  return { provider: row.place_provider, id: row.place_id, name: row.location_name,
+    address: row.location_address || '', category: row.place_category || '',
+    mapUrl: placeMapUrl(row.place_provider, row.place_id) };
+}
+
 export function eventOrigin(row) {
   if (['shared', 'web', 'demo'].includes(row.origin_kind)) return row.origin_kind;
   if ((typeof row.tags === 'string' ? JSON.parse(row.tags || '[]') : row.tags || []).includes('시연용')) return 'demo';

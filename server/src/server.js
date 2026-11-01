@@ -10,6 +10,7 @@ import { formats, domains } from './classification.js';
 import { demoEvents, demoEventCount, isDemoEvent } from './demo-catalog.js';
 import { exploreEnabled } from './personalization.js';
 import { communityContext } from './community.js';
+import { placesEnabled, searchPlaces } from './places.js';
 
 const port = Number(process.env.PORT || 8787);
 const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
@@ -320,6 +321,16 @@ export const server = http.createServer(async (req, res) => {
       await data.onProfileChanged(previous, profile);
       store.updateProfile(user.id, profile);
       return send(res, 200, { profile });
+    }
+    if (req.method === 'GET' && route === '/v1/places') {
+      // 키가 없으면 enabled:false를 돌려 앱이 입력한 이름을 그대로 쓰게 한다.
+      if (!placesEnabled()) return send(res, 200, { enabled: false, places: [] });
+      if (!allowed(`places:${user.id}`, 60, 60 * 1000)) return send(res, 429, { error: '검색이 너무 많아요. 잠시 후 다시 시도해 주세요.' });
+      const query = new URL(req.url, 'http://localhost').searchParams;
+      const latitude = Number(query.get('lat')), longitude = Number(query.get('lng'));
+      const places = await searchPlaces(query.get('q'), {
+        latitude: query.has('lat') ? latitude : undefined, longitude: query.has('lng') ? longitude : undefined });
+      return send(res, 200, { enabled: true, places });
     }
     if (req.method === 'GET' && route === '/v1/recommendations') {
       // seed가 있으면 새로고침 요청이다. seen(이미 보여준 행사)을 뒤로 미루고 순서를 섞는다.

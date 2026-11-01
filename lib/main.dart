@@ -18,6 +18,7 @@ import 'cue_event_identity.dart';
 import 'cue_categories.dart';
 import 'cue_period.dart';
 import 'cue_period_planner.dart';
+import 'cue_place_search.dart';
 import 'cue_route.dart';
 import 'cue_schedule_fields.dart';
 import 'cue_schedule_agent.dart';
@@ -246,6 +247,10 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   bool checkScheduleConflicts = true;
   bool confirmLocalVenues = true;
   bool venueConfirmed = false;
+  // 지도 검색으로 고른 장소. 장소 칸의 글자가 이 이름과 같을 때만 저장에 쓴다.
+  CuePlace? selectedPlace;
+  double? regionLatitude;
+  double? regionLongitude;
   int routeFocusRequest = 0;
   String? statusMessage;
   String? apiError;
@@ -379,6 +384,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         final profile = me['profile'] as Map<String, dynamic>? ?? {};
         communitySchool = profile['school'] as String? ?? '';
         communityRegion = profile['region'] as String? ?? '';
+        regionLatitude = (profile['regionLatitude'] as num?)?.toDouble();
+        regionLongitude = (profile['regionLongitude'] as num?)?.toDouble();
         communityAgeBand = profile['ageBand'] as String? ?? '';
         userId = me['userId'] as String?;
         cloudConnected = me['cloudConnected'] as bool? ?? false;
@@ -1361,7 +1368,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() => stage = ScanStage.saved);
       try {
-        final eventPoint = await travelEstimator.geocode(venue);
+        final place = _pickedPlace;
+        final eventPoint = place == null ? await travelEstimator.geocode(venue) : null;
         await api.post('/v1/events', {
           'title': title,
           'venue': venue,
@@ -1377,6 +1385,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           'participationFee': feeController.text.trim().isEmpty ? null : feeController.text.trim(),
           if (eventPoint != null) 'locationLatitude': eventPoint.latitude,
           if (eventPoint != null) 'locationLongitude': eventPoint.longitude,
+          ...?place?.toSaveFields(),
           'calendarId': target.id,
           'calendarEventId': result!.data,
           'reminderMinutes': reminderMinutes,
@@ -1496,10 +1505,19 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (result?.isSuccess != true) {
         throw CueApiException('캘린더 일정을 수정하지 못했어요.');
       }
+      final venueChanged = draft.venue != savedEvent['venue'];
+      final newPoint = venueChanged ? await travelEstimator.geocode(draft.venue) : null;
       try {
         await api.patch('/v1/events/$id', {
           'title': draft.title,
           'venue': draft.venue,
+          if (!venueChanged) 'locationLatitude': savedEvent['locationLatitude'],
+          if (!venueChanged) 'locationLongitude': savedEvent['locationLongitude'],
+          if (venueChanged) ...{
+            'placeId': null,
+            'locationLatitude': newPoint?.latitude,
+            'locationLongitude': newPoint?.longitude,
+          },
           'startsAt': draft.startsAt.toUtc().toIso8601String(),
           'endsAt': draft.endsAt.toUtc().toIso8601String(),
           'category': draft.category,
@@ -1509,7 +1527,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           'tags': savedEvent['tags'] ?? [],
           'applicationDeadline': savedEvent['applicationDeadline'],
           'participationFee': savedEvent['participationFee'],
-          'locationAddress': savedEvent['locationAddress'],
+          'locationAddress': venueChanged ? null : savedEvent['locationAddress'],
           'sourceUrl': savedEvent['sourceUrl'],
           'calendarId': deviceEvent.calendarId,
           'calendarEventId': result?.data ?? deviceEvent.eventId,
@@ -2432,9 +2450,32 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           labelText: '장소',
           hintText: '예: 한국대학교 서울캠퍼스 본관 3층 시청각실',
           prefixIcon: Icon(Icons.place_outlined),
+          suffixIcon: IconButton(
+            onPressed: _findPlace,
+            icon: Icon(Icons.map_outlined, color: accent),
+            tooltip: '지도에서 찾기',
+          ),
         ),
       ),
-      if (confirmLocalVenues && !venueConfirmed && cueVenueNeedsContext(venueController.text)) ...[
+      if (_pickedPlace case final place?) ...[
+        SizedBox(height: 8),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.verified_outlined, size: 17, color: accent),
+          SizedBox(width: 7),
+          Expanded(child: Text(
+            [if (place.address.isNotEmpty) place.address, if (place.category.isNotEmpty) place.category].join(' · '),
+            style: TextStyle(color: muted, fontSize: 13, height: 1.4))),
+        ]),
+      ] else if (venueController.text.trim().isNotEmpty) ...[
+        SizedBox(height: 6),
+        Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+          onPressed: _findPlace,
+          icon: Icon(Icons.map_outlined, size: 17),
+          label: Text('지도에서 정확한 장소 고르기'),
+          style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+        )),
+      ],
+      if (_pickedPlace == null && confirmLocalVenues && !venueConfirmed && cueVenueNeedsContext(venueController.text)) ...[
         SizedBox(height: 9),
         Container(
           padding: EdgeInsets.all(13),
@@ -2540,6 +2581,53 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (!await _confirmVenueContext()) return;
     }
     _setReviewStep(reviewStep + 1);
+  }
+
+  CuePlace? get _pickedPlace =>
+      selectedPlace != null && selectedPlace!.name == venueController.text.trim() ? selectedPlace : null;
+
+  Future<({bool enabled, List<CuePlace> places})> _searchPlaces(String query) async {
+    final near = regionLatitude == null || regionLongitude == null ? '' : '&lat=$regionLatitude&lng=$regionLongitude';
+    final result = await api.get('/v1/places?q=${Uri.encodeQueryComponent(query)}$near');
+    return (
+      enabled: result['enabled'] as bool? ?? false,
+      places: (result['places'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map(CuePlace.fromJson)
+          .whereType<CuePlace>()
+          .toList(),
+    );
+  }
+
+  Future<void> _findPlace() async {
+    final picked = await showModalBottomSheet<Object>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+        child: SafeArea(child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: CuePlaceSearchSheet(initialQuery: venueController.text.trim(), search: _searchPlaces),
+          ),
+        )),
+      ),
+    );
+    if (!mounted || picked == null) return;
+    setState(() {
+      if (picked is CuePlace) {
+        selectedPlace = picked;
+        venueController.text = picked.name;
+        // 지도에서 확인한 장소는 교내 장소 확인을 다시 묻지 않는다.
+        venueConfirmed = true;
+      } else if (picked is String) {
+        selectedPlace = null;
+        venueController.text = picked;
+        venueConfirmed = false;
+      }
+    });
   }
 
   Widget _periodSummary(CuePeriod period) {
@@ -3456,6 +3544,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _openMap(Map<String, dynamic> event) async {
+    final place = event['place'] as Map<String, dynamic>?;
+    final uri = cueMapUri(placeUrl: place?['mapUrl'] as String?, venue: event['venue'] as String? ?? '');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) _message('지도를 열지 못했어요.');
+  }
+
   Widget _eventTile(Map<String, dynamic> event, {bool recommended = false}) {
     DateTime? date;
     try {
@@ -3475,6 +3569,14 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             startsAt: date,
             sourceKind: recommended ? event['originKind'] as String? ?? 'catalog' : null,
             participationFee: event['participationFee'] as String?,
+            tags: (event['tags'] as List<dynamic>? ?? []).whereType<String>().toList(),
+            placeDetail: event['place'] is Map<String, dynamic>
+                ? [
+                    (event['place'] as Map<String, dynamic>)['address'] as String? ?? '',
+                    (event['place'] as Map<String, dynamic>)['category'] as String? ?? '',
+                  ].where((part) => part.isNotEmpty).join(' · ')
+                : null,
+            onOpenMap: (event['venue'] as String? ?? '').trim().isEmpty ? null : () => _openMap(event),
           ),
           // 둘러보기 묶음은 머리말이 이유를 설명하므로 카드마다 같은 문장을 반복하지 않는다.
           if (recommended && event['section'] != 'explore' &&
@@ -3681,6 +3783,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             '참가비: ${event['participationFee'] ?? '정보 없음'}\n'
             '신청 마감: ${event['applicationDeadline'] ?? '정보 없음'}\n'
             '출처: ${event['sourceUrl'] ?? '없음'}\n\n'
+            '${event['place'] is Map ? '장소: 지도에서 확인한 장소라 이름과 주소를 함께 공개해요.\n\n' : '장소: 지도에서 확인하지 않은 장소라 이름만 공개하고 위치는 약 1km 범위로만 써요.\n\n'}'
             '행사명·장소·시간·설명·분야·태그·참가비·마감일과 출처 링크를 다른 사용자에게 공개해요. '
             '사진 원본과 캘린더 연결·알림 정보는 공유하지 않아요. '
             '설정한 학교·활동 지역·연령대도 추천 기준으로 함께 저장돼요. '
