@@ -43,6 +43,18 @@ test('nearby shared events from the same age band get a truthful distance reason
   assert.match(results[0].reason, /km.*같은 연령대/);
 });
 
+test('duplicate shares become one recommendation with an aggregate peer reason', () => {
+  const shared = (id, owner) => ({ id, sharingUserId: owner, title: '동네 AI 세미나', category: '교육',
+    startsAt: '2099-01-01T01:00:00Z', endsAt: '2099-01-01T02:00:00Z', originKind: 'shared',
+    community: { ageBand: '20s' }, locationLatitude: 37.55, locationLongitude: 126.98 });
+  const results = rankRecommendations({ catalog: [shared('a', 'one'), shared('b', 'two')], saved: [],
+    interests: new Map(), excluded: new Set(), userId: 'viewer',
+    context: { ageBand: '20s', regionLatitude: 37.56, regionLongitude: 126.98 } });
+  assert.equal(results.length, 1);
+  assert.equal(results[0].peerCount, 2);
+  assert.match(results[0].reason, /2명이 공유/);
+});
+
 test('sharing API isolates personal data, enforces ownership, recommends by context and revokes', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cue-community-'));
   Object.assign(process.env, { CUE_TEST_MODE: '1', CUE_DEMO_MODE: '0', SUPABASE_URL: '',

@@ -329,6 +329,14 @@ export const store = {
     }
     return results;
   },
+  recommendationQuality(userId) {
+    const row = db.prepare(`SELECT count(*) total,
+      sum(opened_at is not null) opened,sum(accepted_at is not null) accepted,
+      sum(dismissed_at is not null) dismissed FROM recommendations WHERE user_id=?`).get(userId);
+    const total = Number(row.total || 0), accepted = Number(row.accepted || 0);
+    return { total, opened: Number(row.opened || 0), accepted,
+      dismissed: Number(row.dismissed || 0), acceptanceRate: total ? Math.round(accepted / total * 1000) / 1000 : 0 };
+  },
   createGoal(userId, eventId, title) {
     if (!this.eventVisible(userId,eventId)) return null;
     const existing = db.prepare("SELECT * FROM goals WHERE user_id=? AND related_event_id=? AND status='active'").get(userId,eventId);

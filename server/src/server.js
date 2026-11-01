@@ -337,6 +337,9 @@ export const server = http.createServer(async (req, res) => {
       }
       return send(res, 200, { events: publicEvents(events) });
     }
+    if (req.method === 'GET' && route === '/v1/recommendations/quality') {
+      return send(res, 200, { quality: await data.recommendationQuality(user.id) });
+    }
     if (req.method === 'DELETE' && route === '/v1/interests') {
       await data.resetInterests(user.id);
       return send(res, 200, { reset: true });

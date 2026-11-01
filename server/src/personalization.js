@@ -62,11 +62,19 @@ function seededRandom(seed, id) {
 }
 const varietyJitter = 0.4;
 const seenPenalty = 0.4;
+const peerEventKey = (event) => `${String(event.title || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')}|${String(event.startsAt || '').slice(0, 10)}`;
 
 export function rankRecommendations({ catalog, saved, interests, excluded, currentTime = Date.now(), explore = false, seed = null, seen = new Set(), context = {}, userId = null }) {
   // Old profile keys can still be read until the store recomputes them.
   const positiveDomains = [...interests.entries()].filter(([key, score]) => key.startsWith('domain:') && score > 0);
   const specificInterests = positiveDomains.filter(([key]) => !['domain:문화', 'domain:기타'].includes(key));
+  const peerGroups = new Map();
+  for (const event of catalog) {
+    if (event.originKind !== 'shared' || event.sharingUserId === userId || communityMatch(event, context).score <= 0) continue;
+    const key = peerEventKey(event), owners = peerGroups.get(key) || new Set();
+    if (event.sharingUserId) owners.add(event.sharingUserId);
+    peerGroups.set(key, owners);
+  }
   const ranked = catalog
     .filter((event) => (!userId || event.sharingUserId !== userId) && Date.parse(event.endsAt) > currentTime &&
       (!event.applicationDeadline || Date.parse(event.applicationDeadline) > currentTime) &&
@@ -76,6 +84,8 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
     .map((event) => {
       const classification = classifyEvent(event);
       const community = event.originKind === 'shared' ? communityMatch(event, context) : { score: 0, reason: '' };
+      const peerCount = peerGroups.get(peerEventKey(event))?.size || 0;
+      const peerScore = peerCount >= 2 ? Math.min(6, Math.log2(peerCount + 1) * 2) : 0;
       const matchedDomains = classification.domains.filter((domain) => (interests.get(`domain:${domain}`) || 0) > 0 && domain !== '기타');
       const domainScore = matchedDomains.reduce((sum, domain) => sum + interests.get(`domain:${domain}`), 0);
       const relatedScore = [...interests.entries()].filter(([key, value]) => key.startsWith('domain:') && value > 0 &&
@@ -86,10 +96,10 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
       const eligible = positiveDomains.length > 0 && (matchedDomains.length > 0 || relatedScore > 0) &&
         (!specificInterests.length || matchedDomains.some((domain) => domain !== '문화') || relatedScore > 0);
       const formatScore = Math.max(0, interests.get(`format:${classification.format}`) || 0);
-      const score = (eligible ? domainScore * 4 + relatedScore * 0.6 + tagScore * 1.5 + formatScore * 0.2 : 0) + community.score;
-      const reason = community.reason || (matchedDomains.length ? `${matchedDomains.slice(0, 2).join('·')} 주제에 보인 관심을 바탕으로 추천해요.` :
+      const score = (eligible ? domainScore * 4 + relatedScore * 0.6 + tagScore * 1.5 + formatScore * 0.2 : 0) + community.score + peerScore;
+      const reason = peerCount >= 2 ? `비슷한 환경의 사용자 ${peerCount}명이 공유한 행사예요.` : community.reason || (matchedDomains.length ? `${matchedDomains.slice(0, 2).join('·')} 주제에 보인 관심을 바탕으로 추천해요.` :
         relatedScore > 0 ? '관심 주제와 가까운 분야의 행사예요.' : '');
-      return { ...event, ...classification, score, reason };
+      return { ...event, ...classification, score, reason, ...(peerCount >= 2 ? { peerCount } : {}) };
     })
     .sort((a, b) => b.score - a.score || Date.parse(a.startsAt) - Date.parse(b.startsAt));
   // seed가 있으면 점수를 조금 흔들고 방금 본 행사는 뒤로 미뤄 새로고침마다 다른 행사가 섞여 나오게 한다.
@@ -97,10 +107,19 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
     : base * (1 + varietyJitter * (seededRandom(seed, event.id) * 2 - 1)) * (seen.has(event.id) ? seenPenalty : 1);
   const byVariety = (list) => seed == null ? list
     : [...list].sort((a, b) => varied(b, b.score) - varied(a, a.score));
-  const matched = byVariety(ranked.filter((event) => event.score > 0));
+  const unique = (events) => {
+    const keys = new Set();
+    return events.filter((event) => {
+      const key = event.originKind === 'shared' ? peerEventKey(event) : event.id;
+      if (keys.has(key)) return false;
+      keys.add(key);
+      return true;
+    });
+  };
+  const matched = unique(byVariety(ranked.filter((event) => event.score > 0)));
   if (!explore || matched.length >= exploreMinimum) return matched.slice(0, 12);
   const reason = positiveDomains.length ? '새로운 관심사를 발견할 수 있는 행사예요.' : '지금 인기 있는 행사예요. 저장하면 취향에 맞춰 추천해요.';
-  const filler = byVariety(ranked.filter((event) => event.score <= 0).map((event) => ({ ...event, score: 1, reason })))
+  const filler = unique(byVariety(ranked.filter((event) => event.score <= 0).map((event) => ({ ...event, score: 1, reason }))))
     .map((event) => ({ ...event, score: 0.01 }));
   return [...matched, ...filler].slice(0, Math.max(exploreSize, matched.length));
 }

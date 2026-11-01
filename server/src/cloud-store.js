@@ -299,6 +299,15 @@ export class CloudStore {
     })), 'user_id,event_id').catch(() => {});
     return results;
   }
+  async recommendationQuality() {
+    const rows = await this.rows('recommendations', { user_id: eq(this.userId) });
+    const total = rows.length;
+    const opened = rows.filter((row) => row.opened_at).length;
+    const accepted = rows.filter((row) => row.accepted_at).length;
+    const dismissed = rows.filter((row) => row.dismissed_at).length;
+    return { total, opened, accepted, dismissed,
+      acceptanceRate: total ? Math.round(accepted / total * 1000) / 1000 : 0 };
+  }
   async shareRpc(name, eventId) {
     const response = await fetch(`${this.url}/rest/v1/rpc/${name}`, {
       method: 'POST', headers: { apikey: this.key, authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },

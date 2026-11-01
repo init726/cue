@@ -219,6 +219,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   bool personalizationEnabled = true;
   bool recommendationEnabled = true;
   bool recommendationLoading = false;
+  bool locationBackfillRunning = false;
   String? userId;
   bool cloudConnected = false;
   String? busyEventId;
@@ -399,6 +400,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (onboardingCompleted) {
         await prefs.setBool('cue_onboarding_completed', true);
       }
+      if (cloudConnected) unawaited(_backfillSavedLocations());
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -407,6 +409,51 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           apiErrorDetail = error.toString();
         });
       }
+    }
+  }
+
+  Future<void> _backfillSavedLocations() async {
+    if (locationBackfillRunning || userId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'cue_location_backfill_v1_$userId';
+    if (prefs.getBool(key) == true) return;
+    locationBackfillRunning = true;
+    try {
+      for (final event in saved.where((row) => row['locationLatitude'] == null).take(20)) {
+        final venue = event['venue'] as String? ?? '';
+        final point = await travelEstimator.geocode(venue);
+        if (point == null) continue;
+        final id = event['id'] as String?;
+        if (id == null) continue;
+        await api.patch('/v1/events/$id', {
+          'title': event['title'],
+          'venue': venue,
+          'startsAt': event['startsAt'],
+          'endsAt': event['endsAt'],
+          'category': event['category'] ?? '기타',
+          'description': event['description'] ?? '',
+          'tags': event['tags'] ?? [],
+          'format': event['format'] ?? '기타',
+          'domains': event['domains'] ?? [],
+          'applicationDeadline': event['applicationDeadline'],
+          'participationFee': event['participationFee'],
+          'locationAddress': event['locationAddress'],
+          'locationLatitude': point.latitude,
+          'locationLongitude': point.longitude,
+          'sourceUrl': event['sourceUrl'],
+          'calendarId': event['calendarId'],
+          'calendarEventId': event['calendarEventId'],
+          'reminderMinutes': event['reminderMinutes'],
+        });
+        if (event['shared'] == true) {
+          await api.post('/v1/events/$id/share', {'confirmPublic': true});
+        }
+      }
+      await prefs.setBool(key, true);
+    } catch (_) {
+      // 다음 실행 때 안전하게 다시 시도한다.
+    } finally {
+      locationBackfillRunning = false;
     }
   }
 
