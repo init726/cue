@@ -2126,11 +2126,10 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   Widget _captureCard() => Container(
     padding: EdgeInsets.all(22),
     decoration: BoxDecoration(
-      color: colors.hero,
+      gradient: colors.heroGradient,
       borderRadius: BorderRadius.circular(26),
-      border: isDark ? Border.all(color: colors.border) : null,
       boxShadow: isDark ? null : [BoxShadow(
-        color: Colors.black.withValues(alpha: 0.12), blurRadius: 28, offset: Offset(0, 12))],
+        color: colors.hero.withValues(alpha: 0.28), blurRadius: 30, offset: Offset(0, 14))],
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4185,8 +4184,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             icon: Icon(icon),
             label: Text(label),
             style: FilledButton.styleFrom(
-              backgroundColor: light ? colors.accent : colors.primary,
-              foregroundColor: light ? colors.onAccent : colors.onPrimary,
+              backgroundColor: light ? colors.heroAction : colors.primary,
+              foregroundColor: light ? colors.onHeroAction : colors.onPrimary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15),
               ),

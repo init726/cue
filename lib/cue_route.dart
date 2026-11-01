@@ -167,8 +167,8 @@ class CuePalette {
   Color get mint => colors.tint;
   Color get surface => colors.surface;
   Color get border => colors.border;
-  // 다음 일정 카드. 흰 글자를 얹으므로 라이트는 탠저린, 다크는 짙은 탠저린 면을 쓴다.
-  Color get cue => colors.dark ? const Color(0xFF5A2A14) : colors.accent;
+  // 다음 일정 카드. 촬영 카드와 같은 파란 그라데이션에 흰 글자를 얹는다.
+  Color get cue => colors.hero;
   Color get warn => colors.warn;
   Color get warnSoft => colors.warnTint;
 }
@@ -268,7 +268,7 @@ class _RouteViewState extends State<RouteView> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: palette.cue, borderRadius: BorderRadius.circular(22)),
+      decoration: BoxDecoration(gradient: palette.colors.heroGradient, borderRadius: BorderRadius.circular(22)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

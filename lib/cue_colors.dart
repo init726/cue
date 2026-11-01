@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 /// Cue의 색을 한 곳에서 정한다. 화면 코드는 색 값 대신 역할(ink, accent, …)만 쓴다.
 ///
-/// 방향: 따뜻한 회백색 바탕, 먹색 글자와 주 버튼, 강조는 탠저린 한 가지.
-/// 다크 모드는 따뜻한 숯색 바탕에 흰 주 버튼, 조금 밝힌 탠저린을 쓴다.
+/// 방향: 코발트 블루 한 가지를 정체성으로 쓴다. 회색은 파랑에 맞춰 살짝 차갑게 두고,
+/// 큰 카드(촬영·다음 일정)에만 같은 계열의 아주 옅은 그라데이션으로 깊이를 준다.
+/// 다크 모드는 남색에 가까운 바탕에 조금 밝힌 코발트를 쓴다.
 class CueColors {
   const CueColors._({
     required this.dark,
@@ -20,7 +21,10 @@ class CueColors {
     required this.onAccent,
     required this.tint,
     required this.hero,
+    required this.heroEnd,
     required this.heroMuted,
+    required this.heroAction,
+    required this.onHeroAction,
     required this.success,
     required this.successTint,
     required this.warn,
@@ -61,7 +65,19 @@ class CueColors {
 
   /// 첫 화면 촬영 카드처럼 크게 눈에 띄어야 하는 면과 그 위 보조 글자.
   final Color hero;
+  final Color heroEnd;
   final Color heroMuted;
+
+  /// 큰 카드 위의 주 버튼(흰 버튼에 파란 글자).
+  final Color heroAction;
+  final Color onHeroAction;
+
+  /// 큰 카드의 바탕. 왼쪽 위에서 오른쪽 아래로 같은 파랑을 한 단계만 짙게 한다.
+  LinearGradient get heroGradient => LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [hero, heroEnd],
+  );
 
   /// 사용자 공유·연결됨 같은 긍정 상태.
   final Color success;
@@ -75,50 +91,56 @@ class CueColors {
 
   static const light = CueColors._(
     dark: false,
-    background: Color(0xFFF5F4F1),
+    background: Color(0xFFF3F5F8),
     surface: Color(0xFFFFFFFF),
-    surfaceMuted: Color(0xFFF1EFEB),
-    border: Color(0xFFE7E4DE),
-    ink: Color(0xFF1C1B19),
-    muted: Color(0xFF6B665E),
-    primary: Color(0xFF1C1B19),
+    surfaceMuted: Color(0xFFF1F4F8),
+    border: Color(0xFFE3E8EF),
+    ink: Color(0xFF131A26),
+    muted: Color(0xFF5E6A7A),
+    primary: Color(0xFF2F5BEA),
     onPrimary: Color(0xFFFFFFFF),
-    accent: Color(0xFFF2541B),
-    accentText: Color(0xFFC4420E),
+    accent: Color(0xFF2F5BEA),
+    accentText: Color(0xFF2449CC),
     onAccent: Color(0xFFFFFFFF),
-    tint: Color(0xFFFFEDE4),
-    hero: Color(0xFF1C1B19),
-    heroMuted: Color(0xFFC9C4BB),
-    success: Color(0xFF237A4B),
-    successTint: Color(0xFFE6F3EB),
-    warn: Color(0xFF9A5B00),
-    warnTint: Color(0xFFFFF3DC),
-    danger: Color(0xFFD13A3A),
-    dangerTint: Color(0xFFFDECEC),
+    tint: Color(0xFFEAF0FF),
+    hero: Color(0xFF3966F2),
+    heroEnd: Color(0xFF2448D6),
+    heroMuted: Color(0xFFD7E1FF),
+    heroAction: Color(0xFFFFFFFF),
+    onHeroAction: Color(0xFF2449CC),
+    success: Color(0xFF1E8A57),
+    successTint: Color(0xFFE5F5EC),
+    warn: Color(0xFFA86400),
+    warnTint: Color(0xFFFFF4DE),
+    danger: Color(0xFFDC3F37),
+    dangerTint: Color(0xFFFDECEB),
   );
 
   static const darkColors = CueColors._(
     dark: true,
-    background: Color(0xFF121110),
-    surface: Color(0xFF1C1B19),
-    surfaceMuted: Color(0xFF262420),
-    border: Color(0xFF34312C),
-    ink: Color(0xFFF3F1EC),
-    muted: Color(0xFFA6A097),
-    primary: Color(0xFFF3F1EC),
-    onPrimary: Color(0xFF121110),
-    accent: Color(0xFFFF7A45),
-    accentText: Color(0xFFFF8F61),
-    onAccent: Color(0xFF1A0E08),
-    tint: Color(0xFF3A2216),
-    hero: Color(0xFF24221F),
-    heroMuted: Color(0xFFA6A097),
-    success: Color(0xFF6CCB98),
-    successTint: Color(0xFF1C3127),
-    warn: Color(0xFFF2B44A),
-    warnTint: Color(0xFF3A2C14),
-    danger: Color(0xFFFF6B6B),
-    dangerTint: Color(0xFF3B1E1E),
+    background: Color(0xFF0C1016),
+    surface: Color(0xFF151A23),
+    surfaceMuted: Color(0xFF1D2330),
+    border: Color(0xFF283041),
+    ink: Color(0xFFEEF2F8),
+    muted: Color(0xFF9AA4B4),
+    primary: Color(0xFF4A72FF),
+    onPrimary: Color(0xFFFFFFFF),
+    accent: Color(0xFF6E8FFF),
+    accentText: Color(0xFF8EA7FF),
+    onAccent: Color(0xFF0B1020),
+    tint: Color(0xFF1B2646),
+    hero: Color(0xFF2A44A8),
+    heroEnd: Color(0xFF1B2C74),
+    heroMuted: Color(0xFFB9C6EE),
+    heroAction: Color(0xFFFFFFFF),
+    onHeroAction: Color(0xFF2449CC),
+    success: Color(0xFF5ED39A),
+    successTint: Color(0xFF14291F),
+    warn: Color(0xFFF5B94E),
+    warnTint: Color(0xFF33270F),
+    danger: Color(0xFFFF6B66),
+    dangerTint: Color(0xFF3A1C1C),
   );
 
   static CueColors forBrightness(Brightness brightness) =>
