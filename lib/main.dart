@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:device_calendar/device_calendar.dart' as calendar;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +19,7 @@ import 'cue_categories.dart';
 import 'cue_period.dart';
 import 'cue_period_planner.dart';
 import 'cue_route.dart';
+import 'cue_schedule_fields.dart';
 import 'cue_schedule_agent.dart';
 import 'cue_splash.dart';
 import 'cue_travel_estimator.dart';
@@ -128,6 +130,10 @@ class CueApp extends StatelessWidget {
       theme: cueTheme(Brightness.light),
       darkTheme: cueTheme(Brightness.dark),
       themeMode: mode,
+      // 날짜·시간 휠과 기본 대화상자를 한국어(년·월·일 순서)로 보여준다.
+      locale: const Locale('ko', 'KR'),
+      supportedLocales: const [Locale('ko', 'KR')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       home: const CueHome(),
     ),
   );
@@ -633,63 +639,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         canPop: !forced,
         child: StatefulBuilder(
         builder: (context, setSheet) {
-          Future<void> pickDate() async {
-            final picked = await showDatePicker(
-              context: context,
-              initialDate: start.isBefore(now) ? now : start,
-              firstDate: DateTime(now.year - 1),
-              lastDate: DateTime(now.year + 5),
-            );
-            if (picked == null) return;
-            setSheet(() {
-              start = DateTime(picked.year, picked.month, picked.day, start.hour, start.minute);
-              end = DateTime(picked.year, picked.month, picked.day, end.hour, end.minute);
-              problem = null;
-            });
-          }
-
-          Future<void> pickTime(bool beginning) async {
-            final picked = await showTimePicker(
-              context: context,
-              initialTime: TimeOfDay.fromDateTime(beginning ? start : end),
-            );
-            if (picked == null) return;
-            setSheet(() {
-              if (beginning) {
-                final length = end.difference(start);
-                start = DateTime(start.year, start.month, start.day, picked.hour, picked.minute);
-                end = start.add(length.isNegative || length == Duration.zero
-                    ? Duration(minutes: defaultDurationMinutes)
-                    : length);
-              } else {
-                end = DateTime(start.year, start.month, start.day, picked.hour, picked.minute);
-              }
-              problem = null;
-            });
-          }
-
-          Widget row(IconData icon, String label, String value, VoidCallback onTap) =>
-              InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(15),
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                  margin: EdgeInsets.only(bottom: 9),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: borderColor),
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  child: Row(children: [
-                    Icon(icon, color: accent, size: 22),
-                    SizedBox(width: 12),
-                    Expanded(child: Text(label, style: TextStyle(color: muted))),
-                    Text(value, style: TextStyle(color: ink, fontWeight: FontWeight.w800, fontSize: 16)),
-                    SizedBox(width: 4),
-                    Icon(Icons.chevron_right, color: muted),
-                  ]),
-                ),
-              );
-
           return Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
             child: SafeArea(
@@ -711,10 +660,16 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                       style: TextStyle(color: muted, height: 1.5),
                     ),
                     SizedBox(height: 16),
-                    row(Icons.event_outlined, '날짜', _dateOnly(start), pickDate),
-                    row(Icons.schedule, '시작', _timeOnly(start), () => pickTime(true)),
-                    row(Icons.timelapse_outlined, '종료', _timeOnly(end), () => pickTime(false)),
-                    SizedBox(height: 3),
+                    CueScheduleFields(
+                      start: start,
+                      end: end,
+                      onChanged: (nextStart, nextEnd) => setSheet(() {
+                        start = nextStart;
+                        end = nextEnd;
+                        problem = null;
+                      }),
+                    ),
+                    SizedBox(height: 14),
                     TextField(
                       controller: venueField,
                       decoration: InputDecoration(

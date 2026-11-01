@@ -1,15 +1,15 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'cue_period.dart';
 import 'cue_route.dart' show CuePalette;
 import 'cue_schedule_agent.dart';
+import 'cue_schedule_fields.dart';
 
 const _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
 String _clock(DateTime value) =>
     '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 String _dayLabel(DateTime value) => '${value.month}.${value.day} (${_weekdays[value.weekday - 1]})';
-String _length(int minutes) => minutes < 60 ? '$minutes분'
-    : minutes % 60 == 0 ? '${minutes ~/ 60}시간' : '${minutes ~/ 60}시간 ${minutes % 60}분';
 
 /// 기간형 행사의 방문 날짜와 시간을 고르는 화면.
 /// 기간이 2주 이하면 날짜 띠, 더 길면 월 달력을 쓰고, 고른 날의 운영 시간 막대 위에 내 일정과 방문 시간을 겹쳐 보여준다.
@@ -42,6 +42,7 @@ class _CuePeriodPlannerState extends State<CuePeriodPlanner> {
   late DateTime month;
   DateTime? day;
   DateTime? start;
+  bool wheelOpen = false;
 
   CuePeriod get period => widget.period;
 
@@ -81,6 +82,13 @@ class _CuePeriodPlannerState extends State<CuePeriodPlanner> {
     start = cueBestVisitOn(period, value, widget.busy, now: widget.now, visit: visit)?.start ??
         value.add(const Duration(hours: 14));
   });
+
+  /// 휠에서 고를 수 있는 마지막 시작 시각. 입장 마감과 머무는 시간이 끝나는 시각 중 이른 쪽을 따른다.
+  DateTime _lastStart(CueDayWindow window) {
+    final byClose = window.close.subtract(visit);
+    final last = byClose.isBefore(window.latestStart) ? byClose : window.latestStart;
+    return last.isBefore(window.open) ? window.open : last;
+  }
 
   void _shift(int minutes) => setState(() {
     final current = slot;
@@ -127,9 +135,16 @@ class _CuePeriodPlannerState extends State<CuePeriodPlanner> {
             icon: const Icon(Icons.chevron_left_rounded),
             tooltip: '30분 앞으로',
           ),
-          Expanded(child: Text('${_clock(chosen.start)} – ${_clock(chosen.end)}',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: palette.ink, fontSize: 22, fontWeight: FontWeight.w800))),
+          Expanded(child: GestureDetector(
+            onTap: () => setState(() => wheelOpen = !wheelOpen),
+            child: Column(children: [
+              Text('${_clock(chosen.start)} – ${_clock(chosen.end)}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: palette.ink, fontSize: 22, fontWeight: FontWeight.w800)),
+              Text(wheelOpen ? '닫기' : '눌러서 시작 시간 고르기',
+                  style: TextStyle(color: palette.accent, fontSize: 12, fontWeight: FontWeight.w600)),
+            ]),
+          )),
           IconButton.outlined(
             onPressed: chosen.end.isBefore(window.close) && chosen.start.isBefore(window.latestStart)
                 ? () => _shift(30) : null,
@@ -137,11 +152,21 @@ class _CuePeriodPlannerState extends State<CuePeriodPlanner> {
             tooltip: '30분 뒤로',
           ),
         ]),
+        if (wheelOpen)
+          CueWheelPicker(
+            key: ValueKey(day),
+            mode: CupertinoDatePickerMode.time,
+            value: chosen.start,
+            minuteInterval: 30,
+            minimum: window.open,
+            maximum: _lastStart(window),
+            onChanged: (value) => setState(() => start = value),
+          ),
         const SizedBox(height: 10),
         Wrap(spacing: 8, runSpacing: 8, children: [
           for (final minutes in {60, 90, 120, 180, period.visitMinutes}.toList()..sort())
             ChoiceChip(
-              label: Text(_length(minutes)),
+              label: Text(cueDurationLabel(Duration(minutes: minutes))),
               selected: visit.inMinutes == minutes,
               showCheckmark: false,
               onSelected: (_) => setState(() => visit = Duration(minutes: minutes)),

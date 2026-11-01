@@ -2,6 +2,7 @@ import 'package:device_calendar/device_calendar.dart' as calendar;
 import 'package:flutter/material.dart';
 
 import 'cue_categories.dart';
+import 'cue_schedule_fields.dart';
 
 class SavedEventDraft {
   const SavedEventDraft({
@@ -79,44 +80,6 @@ class _SavedEventEditorState extends State<SavedEventEditor> {
     super.dispose();
   }
 
-  Future<void> _pickTime(bool beginning) async {
-    final current = beginning ? start : end;
-    final date = await showDatePicker(
-      context: context,
-      initialDate: current,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (!mounted || date == null) return;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(current),
-    );
-    if (!mounted || time == null) return;
-    setState(() {
-      final chosen = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
-      if (beginning) {
-        final duration = end.difference(start);
-        start = chosen;
-        end = chosen.add(
-          duration.isNegative || duration == Duration.zero
-              ? Duration(hours: 2)
-              : duration,
-        );
-      } else {
-        end = chosen;
-      }
-    });
-  }
-
-  String _date(DateTime value) =>
-      '${value.year}.${value.month.toString().padLeft(2, '0')}.${value.day.toString().padLeft(2, '0')}  ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
   String _reminder(int value) => switch (value) {
     15 => '15분 전',
     60 => '1시간 전',
@@ -234,15 +197,13 @@ class _SavedEventEditorState extends State<SavedEventEditor> {
             ]),
           ),
           SizedBox(height: 20),
-          OutlinedButton.icon(
-            onPressed: () => _pickTime(true),
-            icon: Icon(Icons.schedule),
-            label: Text('시작  ${_date(start)}'),
-          ),
-          OutlinedButton.icon(
-            onPressed: () => _pickTime(false),
-            icon: Icon(Icons.schedule_outlined),
-            label: Text('종료  ${_date(end)}'),
+          CueScheduleFields(
+            start: start,
+            end: end,
+            onChanged: (nextStart, nextEnd) => setState(() {
+              start = nextStart;
+              end = nextEnd;
+            }),
           ),
           SizedBox(height: 18),
           Text('알림', style: Theme.of(context).textTheme.titleMedium),
