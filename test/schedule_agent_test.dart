@@ -76,6 +76,8 @@ void main() {
     expect(cueVenueNeedsContext('본관 3층 시청각실'), isTrue);
     expect(cueVenueNeedsContext('한국대학교 본관 3층 시청각실'), isFalse);
     expect(cueVenueNeedsContext('서울 코엑스 A홀'), isFalse);
+    expect(cueVenueNeedsContext('서울시립미술관 서소문본관 2층'), isFalse);
+    expect(cueVenueNeedsContext('국립중앙박물관 별관 강당'), isFalse);
   });
 
   test('이동 시간과 도착 여유를 포함해 배치 가능성을 판단한다', () {
