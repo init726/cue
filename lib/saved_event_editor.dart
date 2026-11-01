@@ -34,7 +34,7 @@ class SavedEventEditor extends StatefulWidget {
 }
 
 class _SavedEventEditorState extends State<SavedEventEditor> {
-  static const categories = cueCategories;
+  static final categories = cueCategories;
   late final TextEditingController title;
   late final TextEditingController venue;
   late String category;
