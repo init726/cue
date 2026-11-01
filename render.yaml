@@ -24,3 +24,5 @@ services:
         sync: false
       - key: KOPIS_API_KEY
         sync: false
+      - key: KAKAO_REST_API_KEY
+        sync: false

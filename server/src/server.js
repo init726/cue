@@ -246,7 +246,8 @@ export const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && route === '/health/deep') {
       if (!allowed(`deep-health:${ip}`, 12, 60 * 60 * 1000)) return send(res, 429, { error: '요청이 너무 많아요.' });
       const database = await pingCloud();
-      return send(res, database === 'error' ? 503 : 200, { ok: database !== 'error', database });
+      // places는 지도 검색 키가 설정됐는지만 알린다. 키 값은 내보내지 않는다.
+      return send(res, database === 'error' ? 503 : 200, { ok: database !== 'error', database, places: placesEnabled() });
     }
 
     if (req.method === 'POST' && route === '/v1/session') {

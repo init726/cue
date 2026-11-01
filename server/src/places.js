@@ -2,7 +2,11 @@
 // 키는 서버 환경 변수에만 두고 앱에는 내려보내지 않는다.
 const endpoint = 'https://dapi.kakao.com/v2/local/search/keyword.json';
 
-export const placesEnabled = () => Boolean(process.env.KAKAO_REST_API_KEY);
+// 대시보드에 붙여넣을 때 따라 들어오는 따옴표·공백·"KakaoAK " 접두어는 걷어낸다.
+const kakaoKey = () => String(process.env.KAKAO_REST_API_KEY || '')
+  .trim().replace(/^["']|["']$/g, '').replace(/^KakaoAK\s+/i, '').trim();
+
+export const placesEnabled = () => Boolean(kakaoKey());
 
 export const placeMapUrl = (provider, id) =>
   provider === 'kakao' && /^\d{1,20}$/.test(String(id || '')) ? `https://place.map.kakao.com/${id}` : null;
@@ -19,7 +23,7 @@ export async function searchPlaces(query, { latitude, longitude, fetchImpl = fet
     url.searchParams.set('x', String(longitude));
   }
   const response = await fetchImpl(url, {
-    headers: { authorization: `KakaoAK ${process.env.KAKAO_REST_API_KEY}` },
+    headers: { authorization: `KakaoAK ${kakaoKey()}` },
     signal: AbortSignal.timeout(8000),
   });
   if (!response.ok) {

@@ -24,6 +24,10 @@ test('kakao keyword results become verified place candidates and the key stays o
     assert.match(calls[0].url, /query=%EC%84%9C%EC%9A%B8/);
     assert.match(calls[0].url, /y=37.56&x=126.97/);
     assert.equal(calls[0].auth, 'KakaoAK test-key');
+    process.env.KAKAO_REST_API_KEY = ' "KakaoAK test-key" ';
+    await searchPlaces('서울시립미술관', { fetchImpl });
+    assert.equal(calls[1].auth, 'KakaoAK test-key', '붙여넣은 따옴표와 접두어를 걷어낸다');
+    calls.length = 1;
     assert.deepEqual(await searchPlaces('a', { fetchImpl }), [], '한 글자는 검색하지 않는다');
     delete process.env.KAKAO_REST_API_KEY;
     assert.deepEqual(await searchPlaces('서울시립미술관', { fetchImpl }), [], '키가 없으면 검색하지 않는다');
@@ -51,8 +55,9 @@ test('saved events keep a place link only when sent, and a typed venue can drop 
 test('sharing a verified place reveals its public address, an unverified venue does not', async () => {
   const fs = await import('node:fs/promises'), os = await import('node:os'), path = await import('node:path');
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cue-places-'));
+  // 개발자 .env에 실제 카카오 키가 있어도 이 테스트는 키가 없는 서버를 가정한다.
   Object.assign(process.env, { CUE_TEST_MODE: '1', CUE_DEMO_MODE: '0', SUPABASE_URL: '', SUPABASE_PUBLISHABLE_KEY: '',
-    CUE_DB_FILE: path.join(directory, 'test.sqlite'), CUE_DATA_FILE: path.join(directory, 'missing.json') });
+    KAKAO_REST_API_KEY: '', CUE_DB_FILE: path.join(directory, 'test.sqlite'), CUE_DATA_FILE: path.join(directory, 'missing.json') });
   const { server } = await import('../src/server.js');
   const { store } = await import('../src/store.js');
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
