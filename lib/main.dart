@@ -2126,7 +2126,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       moreCount: upcoming.length - 1,
       weather: latitude == null || longitude == null ? null : _weather(latitude, longitude, start),
       onOpenMap: () => _showOnMap([next], title: next['title'] as String? ?? '다가오는 일정'),
-      onDirections: latitude == null || longitude == null ? null : () => _openMap(next, directions: true),
+      onDirections: latitude == null || longitude == null ? null
+          : () => _showOnMap([next], title: next['title'] as String? ?? '다가오는 일정', directions: true),
       onOpenSchedule: () => _selectTab(1),
     );
   }
@@ -3647,10 +3648,11 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       _openInMap(_mapTarget(event), directions: directions);
 
   // 위치를 아는 일정은 앱 안 지도(iOS)로 보여준다. 지도를 띄울 수 없으면 지도 앱으로 연다.
-  Future<void> _showOnMap(List<Map<String, dynamic>> events, {required String title, bool route = false, int initial = 0}) async {
+  Future<void> _showOnMap(List<Map<String, dynamic>> events,
+      {required String title, bool route = false, int initial = 0, bool directions = false}) async {
     final stops = events.map(CueMapStop.from).whereType<CueMapStop>().toList();
     if (!CueMapView.supported || stops.isEmpty) {
-      if (events.isNotEmpty) await _openMap(events[initial.clamp(0, events.length - 1)]);
+      if (events.isNotEmpty) await _openMap(events[initial.clamp(0, events.length - 1)], directions: directions);
       return;
     }
     final start = events[initial.clamp(0, events.length - 1)];
@@ -3658,6 +3660,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       title: title,
       stops: stops,
       route: route,
+      startWithDirections: directions,
       initial: stops.indexWhere((stop) => identical(stop.event, start)).clamp(0, stops.length - 1),
       onDirections: (stop) => _openMap(stop.event, directions: true),
       onOpenExternal: (stop) => _openMap(stop.event),

@@ -117,14 +117,27 @@ import CoreLocation
         request.departureDate = departure
         request.transportType = .transit
         MKDirections(request: request).calculateETA { response, error in
-          guard error == nil, let response else {
-            result(FlutterError(code: "NO_ROUTE", message: "대중교통 경로를 계산하지 못했어요.", details: nil))
+          if error == nil, let response {
+            result(["minutes": Int(ceil(response.expectedTravelTime / 60.0)), "distanceMeters": Int(response.distance), "mode": "transit"])
             return
           }
-          result([
-            "minutes": Int(ceil(response.expectedTravelTime / 60.0)),
-            "distanceMeters": Int(response.distance)
-          ])
+          // 한국은 Apple 지도 대중교통 경로가 없다. 가까우면 도보 시간을, 멀면 자동차 시간에 환승·대기를 더한 대략값을 쓴다.
+          request.transportType = .walking
+          MKDirections(request: request).calculateETA { walk, _ in
+            if let walk, walk.expectedTravelTime <= 25 * 60 {
+              result(["minutes": Int(ceil(walk.expectedTravelTime / 60.0)), "distanceMeters": Int(walk.distance), "mode": "walking"])
+              return
+            }
+            request.transportType = .automobile
+            MKDirections(request: request).calculateETA { drive, _ in
+              guard let drive else {
+                result(FlutterError(code: "NO_ROUTE", message: "이동 시간을 계산하지 못했어요.", details: nil))
+                return
+              }
+              let minutes = Int(ceil(drive.expectedTravelTime / 60.0 * 1.6)) + 10
+              result(["minutes": minutes, "distanceMeters": Int(drive.distance), "mode": "estimate"])
+            }
+          }
         }
       }
     }

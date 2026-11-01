@@ -32,7 +32,7 @@ private final class CueMapPlatformView: NSObject, FlutterPlatformView, MKMapView
   private let numbered: Bool
   private let bottomInset: CGFloat
   private var annotations: [CueAnnotation] = []
-  private var fitted = false
+  private var routeLine: MKPolyline?
 
   init(frame: CGRect, viewId: Int64, args: [String: Any], messenger: FlutterBinaryMessenger) {
     map = MKMapView(frame: frame)
@@ -76,6 +76,14 @@ private final class CueMapPlatformView: NSObject, FlutterPlatformView, MKMapView
         }
         result(nil)
       case "fit":
+        self.clearRoute()
+        self.fit(animated: true)
+        result(nil)
+      case "route":
+        let args = call.arguments as? [String: Any] ?? [:]
+        self.route(index: args["index"] as? Int ?? 0, mode: args["mode"] as? String ?? "auto", result: result)
+      case "clearRoute":
+        self.clearRoute()
         self.fit(animated: true)
         result(nil)
       default:
@@ -92,6 +100,55 @@ private final class CueMapPlatformView: NSObject, FlutterPlatformView, MKMapView
   }
 
   func view() -> UIView { map }
+
+  private func clearRoute() {
+    if let line = routeLine { map.removeOverlay(line) }
+    routeLine = nil
+  }
+
+  /// 현재 위치에서 핀까지 도보·자동차 경로를 그린다. auto는 걸어서 25분이 넘으면 자동차로 바꾼다.
+  /// 한국에서는 Apple 지도가 대중교통 경로를 주지 않으므로 대중교통은 지도 앱에서 연다.
+  private func route(index: Int, mode: String, result: @escaping FlutterResult) {
+    let status = CLLocationManager().authorizationStatus
+    guard status == .authorizedWhenInUse || status == .authorizedAlways else {
+      result(FlutterError(code: "NO_LOCATION", message: "현재 위치를 쓸 수 없어요.", details: nil))
+      return
+    }
+    guard let annotation = annotations.first(where: { $0.index == index }) else {
+      result(FlutterError(code: "NO_STOP", message: nil, details: nil))
+      return
+    }
+    func request(_ type: MKDirectionsTransportType) -> MKDirections {
+      let request = MKDirections.Request()
+      request.source = MKMapItem.forCurrentLocation()
+      request.destination = MKMapItem(placemark: MKPlacemark(coordinate: annotation.coordinate))
+      request.transportType = type
+      return MKDirections(request: request)
+    }
+    func draw(_ route: MKRoute, _ used: String) {
+      clearRoute()
+      routeLine = route.polyline
+      map.addOverlay(route.polyline, level: .aboveRoads)
+      map.setVisibleMapRect(route.polyline.boundingMapRect,
+                            edgePadding: UIEdgeInsets(top: 60, left: 48, bottom: 48, right: 48), animated: true)
+      result(["mode": used, "minutes": Int(ceil(route.expectedTravelTime / 60)), "meters": Int(route.distance)])
+    }
+    let first = mode == "automobile" ? MKDirectionsTransportType.automobile : .walking
+    request(first).calculate { [weak self] response, error in
+      guard self != nil else { return }
+      guard let walk = response?.routes.first else {
+        result(FlutterError(code: "NO_ROUTE", message: error?.localizedDescription, details: nil))
+        return
+      }
+      if mode == "auto" && walk.expectedTravelTime > 25 * 60 {
+        request(.automobile).calculate { response, _ in
+          if let drive = response?.routes.first { draw(drive, "automobile") } else { draw(walk, "walking") }
+        }
+        return
+      }
+      draw(walk, first == .automobile ? "automobile" : "walking")
+    }
+  }
 
   private func fit(animated: Bool) {
     guard !annotations.isEmpty else { return }
@@ -129,10 +186,18 @@ private final class CueMapPlatformView: NSObject, FlutterPlatformView, MKMapView
   func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
     guard let line = overlay as? MKPolyline else { return MKOverlayRenderer(overlay: overlay) }
     let renderer = MKPolylineRenderer(polyline: line)
-    renderer.strokeColor = tint.withAlphaComponent(0.85)
-    renderer.lineWidth = 4
     renderer.lineCap = .round
-    renderer.lineDashPattern = [1, 9]
+    if line === routeLine {
+      // 길찾기 경로: 굵은 실선.
+      renderer.strokeColor = tint
+      renderer.lineWidth = 6
+      renderer.lineJoin = .round
+    } else {
+      // 하루 동선 순서: 점선.
+      renderer.strokeColor = tint.withAlphaComponent(0.85)
+      renderer.lineWidth = 4
+      renderer.lineDashPattern = [1, 9]
+    }
     return renderer
   }
 }
