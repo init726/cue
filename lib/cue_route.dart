@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'cue_colors.dart';
+
 // 실험: 저장한 일정을 하루 한 줄의 노선으로 보여준다. 일정은 역, 일정 사이는 선이다.
 // 아직 장소 좌표가 없어 이동 시간은 계산하지 않고, 일정 사이 간격과 장소가 같은지만 본다.
 
@@ -152,20 +154,23 @@ const _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
 String dayLabel(DateTime date) =>
     '${date.month}월 ${date.day}일 ${_weekdays[date.weekday - 1]}요일';
 
+/// 동선·기간 화면이 쓰는 색 이름. 실제 값은 cue_colors.dart에서 온다.
 class CuePalette {
-  CuePalette(BuildContext context) : dark = Theme.of(context).brightness == Brightness.dark;
+  CuePalette(BuildContext context) : colors = CueColors.of(context);
 
-  final bool dark;
+  final CueColors colors;
 
-  Color get ink => dark ? const Color(0xFFF4F5F6) : const Color(0xFF181A1D);
-  Color get muted => dark ? const Color(0xFFA9AFB5) : const Color(0xFF697078);
-  Color get accent => dark ? const Color(0xFF55C7F3) : const Color(0xFF169ED3);
-  Color get mint => dark ? const Color(0xFF25343A) : const Color(0xFFE8F7FD);
-  Color get surface => dark ? const Color(0xFF1A1D20) : Colors.white;
-  Color get border => dark ? const Color(0xFF303438) : const Color(0xFFE7EAED);
-  Color get cue => dark ? const Color(0xFF24292C) : const Color(0xFF169ED3);
-  Color get warn => dark ? const Color(0xFFFFB86B) : const Color(0xFFC96A12);
-  Color get warnSoft => dark ? const Color(0xFF3A2A17) : const Color(0xFFFFF1E2);
+  bool get dark => colors.dark;
+  Color get ink => colors.ink;
+  Color get muted => colors.muted;
+  Color get accent => colors.accentText;
+  Color get mint => colors.tint;
+  Color get surface => colors.surface;
+  Color get border => colors.border;
+  // 다음 일정 카드. 흰 글자를 얹으므로 라이트는 탠저린, 다크는 짙은 탠저린 면을 쓴다.
+  Color get cue => colors.dark ? const Color(0xFF5A2A14) : colors.accent;
+  Color get warn => colors.warn;
+  Color get warnSoft => colors.warnTint;
 }
 
 class RouteView extends StatefulWidget {
@@ -381,9 +386,9 @@ class _RouteViewState extends State<RouteView> {
             if (badge != null)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: palette.accent, borderRadius: BorderRadius.circular(50)),
+                decoration: BoxDecoration(color: palette.colors.accent, borderRadius: BorderRadius.circular(50)),
                 child: Text(badge, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800,
-                    color: palette.dark ? const Color(0xFF101214) : Colors.white)),
+                    color: palette.colors.onAccent)),
               ),
           ],
         ),

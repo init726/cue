@@ -220,7 +220,7 @@ class _CuePeriodPlannerState extends State<CuePeriodPlanner> {
     final selected = day == value;
     final closing = !value.isBefore(period.endDate.subtract(const Duration(days: 6)));
     final busy = _busyCount(value);
-    final color = selected ? (palette.dark ? const Color(0xFF101214) : Colors.white)
+    final color = selected ? palette.colors.onPrimary
         : !selectable ? palette.muted.withValues(alpha: 0.4)
         : closing ? palette.warn : palette.ink;
     return InkWell(
@@ -231,7 +231,7 @@ class _CuePeriodPlannerState extends State<CuePeriodPlanner> {
         height: strip ? 66 : 46,
         margin: strip ? const EdgeInsets.only(right: 6) : const EdgeInsets.all(1.5),
         decoration: BoxDecoration(
-          color: selected ? palette.accent : strip ? palette.surface : null,
+          color: selected ? palette.colors.primary : strip ? palette.surface : null,
           borderRadius: BorderRadius.circular(12),
           border: strip && !selected ? Border.all(color: palette.border) : null,
         ),
@@ -348,9 +348,9 @@ class _CuePeriodPlannerState extends State<CuePeriodPlanner> {
                 top: 4, bottom: 4,
                 child: Container(
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(color: palette.accent, borderRadius: BorderRadius.circular(9)),
+                  decoration: BoxDecoration(color: palette.colors.accent, borderRadius: BorderRadius.circular(9)),
                   child: Text('방문', maxLines: 1, overflow: TextOverflow.clip,
-                      style: TextStyle(color: palette.dark ? const Color(0xFF101214) : Colors.white,
+                      style: TextStyle(color: palette.colors.onAccent,
                           fontSize: 12, fontWeight: FontWeight.w800)),
                 ),
               ),

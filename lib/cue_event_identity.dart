@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'cue_colors.dart';
+
 /// An event's date and available metadata provide structure without artwork.
 class CueEventIdentity extends StatelessWidget {
   const CueEventIdentity({
@@ -31,10 +33,10 @@ class CueEventIdentity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final ink = dark ? const Color(0xFFF4F5F6) : const Color(0xFF202629);
-    final muted = dark ? const Color(0xFFA9AFB5) : const Color(0xFF788690);
-    final blue = dark ? const Color(0xFF77BCE2) : const Color(0xFF497F9D);
+    final colors = CueColors.of(context);
+    final ink = colors.ink;
+    final muted = colors.muted;
+    final accent = colors.accentText;
     final date = startsAt?.toLocal();
     final shared = sourceKind == 'shared';
     final sourceLabel = switch (sourceKind) {
@@ -45,15 +47,15 @@ class CueEventIdentity extends StatelessWidget {
       _ => '등록된 행사',
     };
     final sourceColor = shared
-        ? (dark ? const Color(0xFF96CDB3) : const Color(0xFF428568))
-        : blue;
+        ? colors.success
+        : muted;
     const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
     final hour = date?.hour.toString().padLeft(2, '0');
     final minute = date?.minute.toString().padLeft(2, '0');
     Widget chip(String label) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: dark ? const Color(0xFF252D32) : const Color(0xFFF2F6F8),
+        color: colors.surfaceMuted,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(label, style: TextStyle(fontSize: 11, color: muted)),
@@ -66,16 +68,16 @@ class CueEventIdentity extends StatelessWidget {
           width: 58,
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 5),
           decoration: BoxDecoration(
-            color: dark ? const Color(0xFF25343D) : const Color(0xFFEFF5F9),
+            color: colors.surfaceMuted,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: dark ? const Color(0xFF334752) : const Color(0xFFE1EBF2)),
+            border: Border.all(color: colors.border),
           ),
           child: Column(children: [
             Text(date == null ? '일정' : '${date.month}월',
-                style: TextStyle(fontSize: 11, color: blue)),
+                style: TextStyle(fontSize: 11, color: accent)),
             const SizedBox(height: 3),
             Text(date == null ? '—' : '${date.day}'.padLeft(2, '0'),
-                style: TextStyle(fontSize: 29, height: 1.2, fontWeight: FontWeight.w600, color: blue)),
+                style: TextStyle(fontSize: 29, height: 1.2, fontWeight: FontWeight.w700, color: ink)),
             const SizedBox(height: 4),
             Text(date == null ? '확인 필요' : '${weekdays[date.weekday - 1]}요일',
                 textAlign: TextAlign.center, style: TextStyle(fontSize: 10, color: muted)),
@@ -105,7 +107,7 @@ class CueEventIdentity extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
                 child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Icon(placeDetail == null ? Icons.place_outlined : Icons.verified_outlined, size: 14,
-                      color: placeDetail == null ? muted : blue),
+                      color: placeDetail == null ? muted : accent),
                   const SizedBox(width: 3),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(venue, style: TextStyle(fontSize: 12, color: muted, height: 1.5)),
@@ -114,7 +116,7 @@ class CueEventIdentity extends StatelessWidget {
                   ])),
                   if (onOpenMap != null) ...[
                     const SizedBox(width: 4),
-                    Text('지도', style: TextStyle(fontSize: 11, color: blue, fontWeight: FontWeight.w600)),
+                    Text('지도', style: TextStyle(fontSize: 11, color: accent, fontWeight: FontWeight.w600)),
                   ],
                 ]),
               ),

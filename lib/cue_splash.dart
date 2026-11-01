@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 
+import 'cue_colors.dart';
+
 class CueSplash extends StatelessWidget {
   const CueSplash({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final blue = dark ? const Color(0xFF55C7F3) : const Color(0xFF169ED3);
-    final background = dark ? const Color(0xFF101214) : const Color(0xFFF7F8FA);
-    final text = dark ? const Color(0xFFF4F5F6) : const Color(0xFF181A1D);
+    final colors = CueColors.of(context);
+    final blue = colors.accent;
+    final background = colors.background;
+    final text = colors.ink;
     return Scaffold(
       backgroundColor: background,
       body: SafeArea(
@@ -23,7 +25,7 @@ class CueSplash extends StatelessWidget {
                 child: Container(
                   width: 208, height: 208,
                   decoration: BoxDecoration(
-                    color: dark ? const Color(0xFF1A1D20) : const Color(0xFFE8F7FD),
+                    color: colors.tint,
                     borderRadius: BorderRadius.circular(54),
                   ),
                   child: CustomPaint(painter: _CameraPainter(blue)),
@@ -37,11 +39,11 @@ class CueSplash extends StatelessWidget {
             const SizedBox(height: 28),
             SizedBox(width: 90, child: LinearProgressIndicator(
               minHeight: 3, borderRadius: BorderRadius.circular(8),
-              backgroundColor: dark ? const Color(0xFF303438) : const Color(0xFFD9EFF8),
+              backgroundColor: colors.border,
               color: blue,
             )),
             const SizedBox(height: 12),
-            Text('Cue를 여는 중', style: TextStyle(fontSize: 12, color: dark ? const Color(0xFFA9AFB5) : const Color(0xFF697078))),
+            Text('Cue를 여는 중', style: TextStyle(fontSize: 12, color: colors.muted)),
           ]),
         ),
       ),
