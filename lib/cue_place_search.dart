@@ -58,12 +58,6 @@ class CuePlace {
 String cueDistanceLabel(num meters) =>
     meters < 1000 ? '${meters.round()}m' : '${(meters / 1000).toStringAsFixed(meters < 10000 ? 1 : 0)}km';
 
-/// 카카오맵에서 장소를 연다. 확인된 장소는 장소 페이지로, 아니면 이름으로 검색한다.
-Uri cueMapUri({String? placeUrl, required String venue}) =>
-    placeUrl != null && placeUrl.startsWith('https://place.map.kakao.com/')
-        ? Uri.parse(placeUrl)
-        : Uri.https('map.kakao.com', '/', {'q': venue});
-
 typedef CuePlaceSearch = Future<({bool enabled, List<CuePlace> places})> Function(String query);
 
 /// 장소 이름을 입력하면 지도 검색 결과를 보여주고, 고른 장소를 돌려준다.

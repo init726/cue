@@ -18,6 +18,7 @@ import 'cue_colors.dart';
 import 'cue_event_identity.dart';
 import 'cue_categories.dart';
 import 'cue_location.dart';
+import 'cue_map_launcher.dart';
 import 'cue_period.dart';
 import 'cue_period_planner.dart';
 import 'cue_place_search.dart';
@@ -284,6 +285,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   double? regionLongitude;
   // 켜 두면 활동 지역을 기기의 현재 동네로 맞추고 앱을 열 때 가끔 갱신한다.
   bool useDeviceLocation = false;
+  // 지도를 열 앱. 비어 있으면 처음 열 때 묻는다.
+  String? mapAppPreference;
   bool locating = false;
   final locator = const CueLocator();
   int routeFocusRequest = 0;
@@ -376,6 +379,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     checkScheduleConflicts = prefs.getBool('check_schedule_conflicts') ?? true;
     confirmLocalVenues = prefs.getBool('confirm_local_venues') ?? true;
     useDeviceLocation = prefs.getBool('cue_use_device_location') ?? false;
+    mapAppPreference = prefs.getString('cue_map_app');
     await minimum;
     if (!mounted) return;
     setState(() => loading = false);
@@ -2115,19 +2119,13 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     final latitude = (next['locationLatitude'] as num?)?.toDouble();
     final longitude = (next['locationLongitude'] as num?)?.toDouble();
     final start = DateTime.parse(next['startsAt'] as String).toLocal();
-    final venue = next['venue'] as String? ?? '';
     return CueUpcomingCard(
       event: next,
       now: now,
       moreCount: upcoming.length - 1,
       weather: latitude == null || longitude == null ? null : _weather(latitude, longitude, start),
       onOpenMap: () => _openMap(next),
-      onDirections: latitude == null || longitude == null ? null : () async {
-        // 카카오맵 길찾기: 도착지를 장소 이름과 좌표로 넘긴다.
-        final name = venue.replaceAll(',', ' ').trim();
-        final uri = Uri.parse('https://map.kakao.com/link/to/${Uri.encodeComponent(name.isEmpty ? '목적지' : name)},$latitude,$longitude');
-        if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) _message('지도를 열지 못했어요.');
-      },
+      onDirections: latitude == null || longitude == null ? null : () => _openMap(next, directions: true),
       onOpenSchedule: () => _selectTab(1),
     );
   }
@@ -3164,6 +3162,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             '캘린더와 알림' => '새 일정을 저장할 때 적용할 기본값',
             '일정 에이전트' => '중복·충돌·불분명한 장소를 저장 전에 확인',
             '화면 테마' => '편안하게 볼 수 있는 화면',
+            '지도 앱' => '장소와 길찾기를 열 앱',
             '추천' => '관심사 기록과 행사 추천 관리',
             _ => '데이터 처리와 익명 계정 안내',
           }),
@@ -3221,6 +3220,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                 ThemeMode.light => '라이트',
                 ThemeMode.dark => '다크',
               }),
+          _settingsEntry(Icons.map_outlined, '지도 앱',
+              CueMapAppLabel.parse(mapAppPreference)?.label ?? '처음 열 때 고르기'),
           _settingsEntry(Icons.shield_outlined, '내 데이터', '사진 처리 안내 · 계정과 기록'),
         ]),
       ],
@@ -3286,6 +3287,33 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   }
 
   List<Widget> _settingsContent(String section) => switch (section) {
+    '지도 앱' => [
+      _card(FutureBuilder<List<CueMapApp>>(
+        future: cueInstalledMapApps(),
+        builder: (context, snapshot) {
+          final apps = snapshot.data ?? const <CueMapApp>[];
+          final current = CueMapAppLabel.parse(mapAppPreference);
+          Widget option(CueMapApp? app, String label, String? note) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(current == app ? Icons.radio_button_checked : Icons.radio_button_off,
+                color: current == app ? accent : muted),
+            title: Text(label),
+            subtitle: note == null ? null : Text(note),
+            onTap: () => _setMapApp(app),
+          );
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            option(null, '처음 열 때 고르기', '설치된 지도 앱 중에서 물어봐요.'),
+            for (final app in apps)
+              option(app, app.label, app == CueMapApp.web ? '앱 없이 카카오맵 웹으로 열어요.' : null),
+            if (snapshot.connectionState == ConnectionState.done && !apps.contains(CueMapApp.kakao))
+              Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text('카카오맵·네이버 지도 앱을 설치하면 여기에 나타나요.', style: TextStyle(color: muted, fontSize: 13)),
+              ),
+          ]);
+        },
+      )),
+    ],
     '캘린더와 알림' => [
       _card(
         Column(
@@ -3603,10 +3631,65 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _openMap(Map<String, dynamic> event) async {
+  CueMapTarget _mapTarget(Map<String, dynamic> event) {
     final place = event['place'] as Map<String, dynamic>?;
-    final uri = cueMapUri(placeUrl: place?['mapUrl'] as String?, venue: event['venue'] as String? ?? '');
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) _message('지도를 열지 못했어요.');
+    return CueMapTarget(
+      name: event['venue'] as String? ?? '',
+      latitude: (event['locationLatitude'] as num?)?.toDouble(),
+      longitude: (event['locationLongitude'] as num?)?.toDouble(),
+      kakaoPlaceId: place?['provider'] == 'kakao' ? (place?['id'] as String?) : null,
+    );
+  }
+
+  Future<void> _openMap(Map<String, dynamic> event, {bool directions = false}) =>
+      _openInMap(_mapTarget(event), directions: directions);
+
+  // 설치된 지도 앱으로 바로 연다. 처음 한 번만 앱을 고르고, 고른 앱은 설정에서 바꿀 수 있다.
+  Future<void> _openInMap(CueMapTarget target, {bool directions = false}) async {
+    final installed = await cueInstalledMapApps();
+    var app = CueMapAppLabel.parse(mapAppPreference);
+    if (app == null || !installed.contains(app)) {
+      final apps = installed.where((item) => item != CueMapApp.web).toList();
+      if (apps.isEmpty) {
+        app = CueMapApp.web;
+      } else {
+        if (!mounted) return;
+        app = await showModalBottomSheet<CueMapApp>(
+          context: context,
+          showDragHandle: true,
+          builder: (sheetContext) => SafeArea(child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('어떤 지도로 열까요?', style: TextStyle(color: ink, fontSize: 19, fontWeight: FontWeight.w800)),
+              SizedBox(height: 4),
+              Text('고른 앱으로 계속 열어요. 설정 → 지도 앱에서 바꿀 수 있어요.', style: TextStyle(color: muted, fontSize: 13)),
+              SizedBox(height: 10),
+              for (final item in apps)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.map_outlined, color: accent),
+                  title: Text(item.label),
+                  trailing: Icon(Icons.chevron_right, color: muted),
+                  onTap: () => Navigator.pop(sheetContext, item),
+                ),
+            ]),
+          )),
+        );
+        if (app == null) return;
+        await _setMapApp(app);
+      }
+    }
+    if (!await cueLaunchMap(app, target, directions: directions)) _message('지도를 열지 못했어요.');
+  }
+
+  Future<void> _setMapApp(CueMapApp? app) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (app == null) {
+      await prefs.remove('cue_map_app');
+    } else {
+      await prefs.setString('cue_map_app', app.name);
+    }
+    if (mounted) setState(() => mapAppPreference = app?.name);
   }
 
   Widget _eventTile(Map<String, dynamic> event, {bool recommended = false}) {

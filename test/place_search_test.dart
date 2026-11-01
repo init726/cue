@@ -72,8 +72,6 @@ void main() {
     expect(find.text('서울 중구 덕수궁길 61 · 미술관'), findsOneWidget);
     await tester.tap(find.text('지도'));
     expect(opened, 1);
-    expect(cueMapUri(placeUrl: 'https://place.map.kakao.com/8217196', venue: 'x').toString(),
-        'https://place.map.kakao.com/8217196');
-    expect(cueMapUri(venue: '우리 동네 책방').host, 'map.kakao.com');
+
   });
 }

@@ -8,6 +8,11 @@
 	<string>보관된 행사 포스터와 공지문을 선택합니다.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>같은 네트워크의 Cue 서버에서 행사 사진을 분석합니다.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>kakaomap</string>
+		<string>nmap</string>
+	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>내 주변에서 공유된 행사를 추천하려고 현재 동네를 확인합니다. 정확한 위치는 저장하지 않고 약 1km 단위로만 사용합니다.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
