@@ -11,6 +11,7 @@ import { demoEvents, demoEventCount, isDemoEvent } from './demo-catalog.js';
 import { exploreEnabled } from './personalization.js';
 import { communityContext } from './community.js';
 import { placesEnabled, regionName, searchPlaces } from './places.js';
+import { weatherAt } from './weather.js';
 
 const port = Number(process.env.PORT || 8787);
 const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
@@ -322,6 +323,13 @@ export const server = http.createServer(async (req, res) => {
       await data.onProfileChanged(previous, profile);
       store.updateProfile(user.id, profile);
       return send(res, 200, { profile });
+    }
+    if (req.method === 'GET' && route === '/v1/weather') {
+      if (!allowed(`weather:${user.id}`, 120, 60 * 60 * 1000)) return send(res, 429, { error: '잠시 후 다시 시도해 주세요.' });
+      const query = new URL(req.url, 'http://localhost').searchParams;
+      const at = query.get('at');
+      if (at != null && !Number.isFinite(Date.parse(at))) return send(res, 400, { error: '시간이 올바르지 않아요.' });
+      return send(res, 200, await weatherAt(Number(query.get('lat')), Number(query.get('lng')), at));
     }
     if (req.method === 'GET' && route === '/v1/places/region') {
       // 앱이 보낸 대략적인 위치(소수 셋째 자리)를 지역 이름으로만 바꾸고 저장하지 않는다.

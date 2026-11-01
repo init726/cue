@@ -32,7 +32,8 @@ void main() {
     expect(find.text('포스터 촬영하기'), findsOneWidget);
     expect(find.text('사진첩'), findsOneWidget);
     expect(find.text('PDF·한글'), findsOneWidget);
-    expect(find.text('저장 전에 Cue가 먼저 확인해요'), findsOneWidget);
+    expect(find.text('저장 전에 Cue가 먼저 확인해요'), findsNothing);
+    expect(find.textContaining('다음 일정의 지도와 그 시간 날씨'), findsOneWidget);
     expect(find.text('사용 방법'), findsNothing);
     expect(find.text('내 일정'), findsOneWidget);
     expect(find.text('추천'), findsOneWidget);

@@ -26,6 +26,7 @@ import 'cue_schedule_fields.dart';
 import 'cue_schedule_agent.dart';
 import 'cue_splash.dart';
 import 'cue_travel_estimator.dart';
+import 'cue_upcoming.dart';
 import 'saved_event_editor.dart';
 
 final cueThemeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
@@ -386,6 +387,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   }
 
   Future<void> _refresh({bool shuffle = false}) async {
+    _weatherRequests.clear();
     if (mounted) setState(() => recommendationLoading = true);
     // 새로고침(shuffle)이면 새 seed와 방금 본 행사를 보내 서버가 다른 조합을 고르게 한다.
     var recommendationRoute = '/v1/recommendations';
@@ -2071,57 +2073,64 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       if (stage == ScanStage.saved) _savedCard(),
       if (stage == ScanStage.idle) ...[
         SizedBox(height: 18),
-        _scanAgentGuide(),
+        _upcomingSection(),
       ],
       SizedBox(height: 22),
     ],
   );
 
-  Widget _scanAgentGuide() => _card(
-    Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(13)),
-            child: Icon(Icons.auto_awesome_outlined, color: accent, size: 21),
-          ),
-          SizedBox(width: 12),
-          Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('저장 전에 Cue가 먼저 확인해요',
-                  style: TextStyle(color: ink, fontSize: 16, fontWeight: FontWeight.w800)),
-              SizedBox(height: 3),
-              Text('일정을 임의로 바꾸지 않고 선택지를 보여드려요.',
-                  style: TextStyle(color: muted, fontSize: 13, height: 1.45)),
-            ],
-          )),
-        ]),
-        SizedBox(height: 16),
-        _agentCheckRow(Icons.content_copy_outlined, '중복 일정', '이미 저장한 행사는 다시 추가하지 않아요.'),
-        _agentCheckRow(Icons.alt_route_rounded, '시간 충돌', '겹치면 같은 날의 빈 시간을 제안해요.'),
-        _agentCheckRow(Icons.location_searching_outlined, '교내 장소', '학교·캠퍼스·건물명이 부족하면 다시 물어봐요.', last: true),
-      ],
-    ),
-  );
+  // 같은 위치·시각의 날씨는 화면을 다시 그려도 한 번만 묻는다.
+  final _weatherRequests = <String, Future<CueWeather?>>{};
 
-  Widget _agentCheckRow(IconData icon, String title, String text, {bool last = false}) => Padding(
-    padding: EdgeInsets.only(bottom: last ? 0 : 13),
-    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Icon(icon, size: 19, color: muted),
-      SizedBox(width: 11),
-      Expanded(child: RichText(text: TextSpan(
-        style: TextStyle(color: muted, fontSize: 13, height: 1.45),
-        children: [
-          TextSpan(text: '$title  ', style: TextStyle(color: ink, fontWeight: FontWeight.w700)),
-          TextSpan(text: text),
-        ],
-      ))),
-    ]),
-  );
+  Future<CueWeather?> _weather(double latitude, double longitude, [DateTime? at]) {
+    final hour = at == null ? null : DateTime.utc(at.toUtc().year, at.toUtc().month, at.toUtc().day, at.toUtc().hour);
+    final key = '${latitude.toStringAsFixed(2)},${longitude.toStringAsFixed(2)},${hour?.toIso8601String() ?? 'now'}';
+    return _weatherRequests.putIfAbsent(key, () async {
+      try {
+        final when = hour == null ? '' : '&at=${Uri.encodeQueryComponent(at!.toUtc().toIso8601String())}';
+        return CueWeather.fromJson(await api.get('/v1/weather?lat=$latitude&lng=$longitude$when'));
+      } catch (_) {
+        _weatherRequests.remove(key);
+        return null;
+      }
+    });
+  }
+
+  // 스캔 탭 아래: 다음 일정의 지도·날씨·길찾기. 일정이 없으면 활동 지역의 오늘 날씨.
+  Widget _upcomingSection() {
+    final now = DateTime.now();
+    final upcoming = saved.where((event) {
+      final end = DateTime.tryParse(event['endsAt'] as String? ?? '');
+      return end != null && end.toLocal().isAfter(now);
+    }).toList()
+      ..sort((a, b) => (a['startsAt'] as String).compareTo(b['startsAt'] as String));
+    if (upcoming.isEmpty) {
+      return CueTodayCard(
+        region: communityRegion.isEmpty ? '내 지역' : communityRegion,
+        weather: regionLatitude == null || regionLongitude == null ? null : _weather(regionLatitude!, regionLongitude!),
+        onUseLocation: locating ? null : () => _useCurrentLocation(),
+      );
+    }
+    final next = upcoming.first;
+    final latitude = (next['locationLatitude'] as num?)?.toDouble();
+    final longitude = (next['locationLongitude'] as num?)?.toDouble();
+    final start = DateTime.parse(next['startsAt'] as String).toLocal();
+    final venue = next['venue'] as String? ?? '';
+    return CueUpcomingCard(
+      event: next,
+      now: now,
+      moreCount: upcoming.length - 1,
+      weather: latitude == null || longitude == null ? null : _weather(latitude, longitude, start),
+      onOpenMap: () => _openMap(next),
+      onDirections: latitude == null || longitude == null ? null : () async {
+        // 카카오맵 길찾기: 도착지를 장소 이름과 좌표로 넘긴다.
+        final name = venue.replaceAll(',', ' ').trim();
+        final uri = Uri.parse('https://map.kakao.com/link/to/${Uri.encodeComponent(name.isEmpty ? '목적지' : name)},$latitude,$longitude');
+        if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) _message('지도를 열지 못했어요.');
+      },
+      onOpenSchedule: () => _selectTab(1),
+    );
+  }
 
   Widget _captureCard() => Container(
     padding: EdgeInsets.all(22),

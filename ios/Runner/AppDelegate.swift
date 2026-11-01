@@ -36,6 +36,16 @@ import CoreLocation
         }
         return
       }
+      if call.method == "snapshot",
+         let args = call.arguments as? [String: Any],
+         let latitude = args["latitude"] as? Double,
+         let longitude = args["longitude"] as? Double,
+         let width = args["width"] as? Double,
+         let height = args["height"] as? Double {
+        self.snapshot(latitude: latitude, longitude: longitude, size: CGSize(width: width, height: height),
+                      dark: args["dark"] as? Bool ?? false, pin: UInt32(args["pin"] as? Int ?? 0xFF2F5BEA), result: result)
+        return
+      }
       guard call.method == "estimateTravel",
             let args = call.arguments as? [String: Any],
             let from = args["from"] as? String,
@@ -45,6 +55,44 @@ import CoreLocation
       }
       let departure = (args["departureAt"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) } ?? Date()
       self.estimateTravel(from: from, to: to, departure: departure, result: result)
+    }
+  }
+
+  // 행사 장소 주변 지도를 이미지로 그리고 가운데에 앱 색 핀을 얹는다. 지도 자체는 Apple 지도를 쓴다.
+  private func snapshot(latitude: Double, longitude: Double, size: CGSize, dark: Bool, pin: UInt32, result: @escaping FlutterResult) {
+    let options = MKMapSnapshotter.Options()
+    let center = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    options.region = MKCoordinateRegion(center: center, latitudinalMeters: 900, longitudinalMeters: 900)
+    options.size = size
+    options.scale = UIScreen.main.scale
+    options.pointOfInterestFilter = .includingAll
+    options.traitCollection = UITraitCollection(userInterfaceStyle: dark ? .dark : .light)
+    MKMapSnapshotter(options: options).start { snapshot, error in
+      guard let snapshot = snapshot, error == nil else {
+        result(FlutterError(code: "SNAPSHOT", message: "지도를 그리지 못했어요.", details: nil))
+        return
+      }
+      let color = UIColor(red: CGFloat((pin >> 16) & 0xFF) / 255, green: CGFloat((pin >> 8) & 0xFF) / 255,
+                          blue: CGFloat(pin & 0xFF) / 255, alpha: 1)
+      let image = UIGraphicsImageRenderer(size: size, format: {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = snapshot.image.scale
+        return format
+      }()).image { _ in
+        snapshot.image.draw(at: .zero)
+        let point = snapshot.point(for: center)
+        UIColor.black.withAlphaComponent(0.18).setFill()
+        UIBezierPath(ovalIn: CGRect(x: point.x - 9, y: point.y - 7, width: 18, height: 18)).fill()
+        UIColor.white.setFill()
+        UIBezierPath(ovalIn: CGRect(x: point.x - 11, y: point.y - 11, width: 22, height: 22)).fill()
+        color.setFill()
+        UIBezierPath(ovalIn: CGRect(x: point.x - 7.5, y: point.y - 7.5, width: 15, height: 15)).fill()
+      }
+      guard let data = image.pngData() else {
+        result(FlutterError(code: "SNAPSHOT", message: "지도를 그리지 못했어요.", details: nil))
+        return
+      }
+      result(FlutterStandardTypedData(bytes: data))
     }
   }
 
