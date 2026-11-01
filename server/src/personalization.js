@@ -70,8 +70,10 @@ const peerEventKey = (event) => `${String(event.title || '').toLowerCase().repla
 // 추천 점수는 신호마다 0~1로 맞춘 뒤 아래 가중치로 더한다. 가중치를 바꿀 때는 이 표만 고친다.
 export const rankingWeights = Object.freeze({ interest: 0.5, peer: 0.15, proximity: 0.15, affinity: 0.1, urgency: 0.1 });
 const listSize = 12;
-// 관심 주제와 맞지 않지만 가까운 사람들이 공유한 행사는 새 관심사를 찾도록 이 개수까지만 섞는다.
-const discoverySlots = 2;
+// 다른 사용자가 공유한 행사는 '내 주변' 묶음에 이 개수까지 보여준다.
+const communitySlots = 5;
+// 공유 행사끼리는 거리를 가장 크게 보고, 같은 학교·연령대, 관심사, 여러 명이 공유했는지 순으로 본다.
+export const communityWeights = Object.freeze({ proximity: 0.45, affinity: 0.25, interest: 0.2, peer: 0.1 });
 // 한 분야가 목록 위쪽을 독차지하지 않게 분야마다 이 개수까지만 먼저 보여준다.
 const perTopicCap = 2;
 const nearbyKm = 30;
@@ -141,9 +143,11 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
       const interestRaw = eligible ? domainScore * 4 + relatedScore * 0.6 + tagScore * 1.5 + formatScore * 0.2 : 0;
       const distance = distanceKm(home, { latitude: event.locationLatitude, longitude: event.locationLongitude });
       const signals = rankingSignals(event, { interestRaw, peerCount, community, distance, currentTime });
-      // 관심 주제와 맞지 않는 행사는 가까운 사람들이 공유한 경우에만 탐색 후보가 된다.
-      const discovery = !signals.interest && community.score > 0;
-      const score = signals.interest || discovery ? weighted(signals) : 0;
+      // 환경이 맞는 사람이 공유한 행사는 관심사와 상관없이 '내 주변' 후보가 된다.
+      const discovery = event.originKind === 'shared' && community.score > 0;
+      const score = discovery
+        ? Object.entries(communityWeights).reduce((sum, [key, weight]) => sum + weight * signals[key], 0)
+        : signals.interest ? weighted(signals) : 0;
       const reason = peerCount >= 2 ? `비슷한 환경의 사용자 ${peerCount}명이 공유한 행사예요.` : community.reason || (matchedDomains.length ? `${matchedDomains.slice(0, 2).join('·')} 주제에 보인 관심을 바탕으로 추천해요.` :
         relatedScore > 0 ? '관심 주제와 가까운 분야의 행사예요.' : '');
       return { ...event, ...classification, score, reason, discovery, distance, ...(peerCount >= 2 ? { peerCount } : {}) };
@@ -166,7 +170,7 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
   // section은 추천 탭의 묶음이다. interest: 관심 주제와 맞음, nearby: 가까운 사람들이 공유, explore: 둘러보기.
   const strip = ({ discovery, distance, ...event }, section) => ({ ...event, section });
   const relevant = spreadTopics(unique(byVariety(ranked.filter((event) => event.score > 0 && !event.discovery))));
-  const discovered = unique(byVariety(ranked.filter((event) => event.score > 0 && event.discovery))).slice(0, discoverySlots);
+  const discovered = unique(byVariety(ranked.filter((event) => event.score > 0 && event.discovery))).slice(0, communitySlots);
   const matched = [...relevant.slice(0, listSize - discovered.length).map((event) => strip(event, 'interest')),
     ...discovered.map((event) => strip(event, 'nearby'))];
   if (!explore || matched.length >= exploreMinimum) return matched;

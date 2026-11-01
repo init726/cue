@@ -46,3 +46,29 @@ export async function searchPlaces(query, { latitude, longitude, fetchImpl = fet
     }];
   });
 }
+
+const regionEndpoint = 'https://dapi.kakao.com/v2/local/geo/coord2regioncode.json';
+const shortProvince = (name) => String(name || '')
+  .replace(/특별자치시|특별자치도|특별시|광역시/, '').replace(/^(충청|전라|경상)(남|북)도$/, (_, a, b) => `${a[0]}${b}`)
+  .replace(/^경기도$/, '경기').replace(/^강원도$/, '강원').replace(/^제주도$/, '제주');
+
+// 기기 위치를 "서울 중구 명동" 같은 활동 지역 이름으로 바꾼다. 행정동(H)을 우선한다.
+export async function regionName(latitude, longitude, { fetchImpl = fetch } = {}) {
+  if (!placesEnabled() || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  const url = new URL(regionEndpoint);
+  url.searchParams.set('x', String(longitude));
+  url.searchParams.set('y', String(latitude));
+  const response = await fetchImpl(url, {
+    headers: { authorization: `KakaoAK ${kakaoKey()}` },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!response.ok) {
+    console.error('Kakao region status:', response.status);
+    throw Object.assign(new Error('현재 위치의 지역을 찾지 못했어요.'), { status: 502 });
+  }
+  const documents = (await response.json()).documents || [];
+  const region = documents.find((doc) => doc.region_type === 'H') || documents[0];
+  if (!region) return null;
+  return [shortProvince(region.region_1depth_name), region.region_2depth_name, region.region_3depth_name]
+    .filter(Boolean).join(' ').slice(0, 80) || null;
+}

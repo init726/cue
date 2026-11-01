@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'cue_api.dart';
 import 'cue_event_identity.dart';
 import 'cue_categories.dart';
+import 'cue_location.dart';
 import 'cue_period.dart';
 import 'cue_period_planner.dart';
 import 'cue_place_search.dart';
@@ -251,6 +252,10 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   CuePlace? selectedPlace;
   double? regionLatitude;
   double? regionLongitude;
+  // 켜 두면 활동 지역을 기기의 현재 동네로 맞추고 앱을 열 때 가끔 갱신한다.
+  bool useDeviceLocation = false;
+  bool locating = false;
+  final locator = const CueLocator();
   int routeFocusRequest = 0;
   String? statusMessage;
   String? apiError;
@@ -340,6 +345,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     preventDuplicateEvents = prefs.getBool('prevent_duplicate_events') ?? true;
     checkScheduleConflicts = prefs.getBool('check_schedule_conflicts') ?? true;
     confirmLocalVenues = prefs.getBool('confirm_local_venues') ?? true;
+    useDeviceLocation = prefs.getBool('cue_use_device_location') ?? false;
     await minimum;
     if (!mounted) return;
     setState(() => loading = false);
@@ -420,6 +426,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         await prefs.setBool('cue_onboarding_completed', true);
       }
       if (cloudConnected) unawaited(_backfillSavedLocations());
+      if (useDeviceLocation && !locating) {
+        final last = DateTime.tryParse(prefs.getString('cue_device_location_at') ?? '');
+        if (last == null || DateTime.now().difference(last) > const Duration(hours: 6)) {
+          await _useCurrentLocation(silent: true);
+        }
+      }
       await _loadRecommendations(recommendationRoute);
     } catch (error) {
       if (mounted) {
@@ -3006,10 +3018,34 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
 
   // 추천 탭은 서버가 붙인 묶음(section) 순서로 보여준다. 예전 서버는 묶음이 없으므로 맞춤 추천으로 본다.
   static const _recommendationSections = [
+    ('nearby', '내 주변에서 공유된 행사', '가까운 곳·같은 연령대 사람들이 직접 찾아 공유했어요.'),
     ('interest', '취향에 맞는 행사', '저장하고 관심 표시한 분야를 바탕으로 골랐어요.'),
-    ('nearby', '가까운 사람들이 공유한 행사', '같은 학교·지역·연령대가 직접 공유했어요.'),
     ('explore', '이런 행사는 어때요?', '관심 분야 밖이지만 가깝고 곧 열리는 행사예요.'),
   ];
+
+  // 추천 기준 위치를 한 줄로 보여준다. 위치를 쓰지 않으면 현재 위치를 쓰자고 권한다.
+  Widget _locationBar() {
+    final hasRegion = regionLatitude != null && communityRegion.isNotEmpty;
+    final ageHint = communityAgeBand.isEmpty ? ' · 연령대를 정하면 또래가 공유한 행사가 먼저 나와요' : ' · ${_ageBandLabel(communityAgeBand)}';
+    return Container(
+      padding: EdgeInsets.fromLTRB(14, 10, 6, 10),
+      decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(16)),
+      child: Row(children: [
+        Icon(useDeviceLocation ? Icons.my_location : Icons.near_me_outlined, color: accent, size: 20),
+        SizedBox(width: 10),
+        Expanded(child: Text(
+          hasRegion ? '$communityRegion 기준$ageHint' : '현재 위치를 쓰면 내 주변에서 공유된 행사를 먼저 보여드려요.',
+          style: TextStyle(color: ink, fontSize: 13, height: 1.4))),
+        if (locating)
+          Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)))
+        else
+          TextButton(
+            onPressed: () => _useCurrentLocation(),
+            child: Text(useDeviceLocation ? '새로고침' : '현재 위치 사용'),
+          ),
+      ]),
+    );
+  }
 
   Widget _discover() {
     final sections = <String, List<Map<String, dynamic>>>{};
@@ -3030,6 +3066,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             tooltip: '다른 행사 보기',
           ),
         ]),
+        SizedBox(height: 12),
+        _locationBar(),
         SizedBox(height: 16),
         if (recommendationLoading && recommended.isEmpty)
           _empty(Icons.search, '행사를 찾고 있어요', '새 행사를 찾을 때는 1분 정도 걸릴 수 있어요.')
@@ -3064,20 +3102,11 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             ],
             SizedBox(height: 12),
           ],
-        if (noCommunity)
-          _card(Row(children: [
-            Icon(Icons.near_me_outlined, color: accent),
-            SizedBox(width: 12),
-            Expanded(child: Text('활동 지역을 알려주면 가까운 행사부터 보여드려요.',
-                style: TextStyle(color: ink, height: 1.45))),
-            TextButton(onPressed: _editCommunity, child: Text('설정')),
-          ]))
-        else
-          TextButton.icon(
-            onPressed: _editCommunity,
-            icon: Icon(Icons.tune),
-            label: Text('학교·활동 지역 바꾸기'),
-          ),
+        TextButton.icon(
+          onPressed: _editCommunity,
+          icon: Icon(Icons.tune),
+          label: Text(noCommunity ? '학교·지역·연령대 설정' : '학교·지역·연령대 바꾸기'),
+        ),
       ],
     );
   }
@@ -3697,6 +3726,73 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     'under20' => '20세 미만', '20s' => '20대', '30s' => '30대', '40plus' => '40세 이상', _ => '',
   };
 
+  // 현재 위치를 동네 이름과 약 1km 단위 좌표로 바꿔 활동 지역에 저장한다.
+  // silent면 권한을 묻지 않고, 실패해도 알리지 않으며 추천을 다시 불러오지 않는다(새로고침 중에 호출).
+  Future<void> _useCurrentLocation({bool silent = false}) async {
+    if (locating) return;
+    setState(() => locating = true);
+    try {
+      final point = await locator.current(ask: !silent);
+      if (point == null) {
+        if (silent || !mounted) return;
+        final deniedForever = await locator.deniedForever();
+        if (!mounted) return;
+        if (deniedForever) {
+          final open = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
+            title: Text('위치 권한이 꺼져 있어요'),
+            content: Text('설정에서 Cue의 위치 접근을 "앱을 사용하는 동안"으로 바꾸면 내 주변 행사를 볼 수 있어요.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text('나중에')),
+              FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text('설정 열기')),
+            ],
+          ));
+          if (open == true) await locator.openSettings();
+        } else {
+          _message('현재 위치를 확인하지 못했어요. 위치 서비스를 켜고 다시 시도해 주세요.');
+        }
+        return;
+      }
+      String? region;
+      try {
+        final result = await api.get('/v1/places/region?lat=${point.latitude}&lng=${point.longitude}');
+        region = result['region'] as String?;
+      } catch (_) {
+        // 지역 이름을 못 찾아도 좌표만으로 거리 추천은 된다.
+      }
+      double coarse(double value) => (value * 100).round() / 100;
+      await api.patch('/v1/profile', {
+        'region': region ?? '현재 위치 주변',
+        'regionLatitude': coarse(point.latitude),
+        'regionLongitude': coarse(point.longitude),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('cue_use_device_location', true);
+      await prefs.setString('cue_device_location_at', DateTime.now().toIso8601String());
+      if (!mounted) return;
+      setState(() {
+        useDeviceLocation = true;
+        communityRegion = region ?? '현재 위치 주변';
+        regionLatitude = coarse(point.latitude);
+        regionLongitude = coarse(point.longitude);
+      });
+      if (!silent) {
+        _message('${region ?? '현재 위치'} 주변 행사로 추천할게요.');
+        await _refresh();
+      }
+    } catch (error) {
+      if (!silent) _error(error);
+    } finally {
+      if (mounted) setState(() => locating = false);
+    }
+  }
+
+  Future<void> _stopDeviceLocation() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('cue_use_device_location', false);
+    if (mounted) setState(() => useDeviceLocation = false);
+    _message('현재 위치 갱신을 껐어요. 활동 지역은 직접 바꿀 수 있어요.');
+  }
+
   Future<void> _editCommunity() async {
     var school = communitySchool;
     var region = communityRegion;
@@ -3714,6 +3810,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           TextFormField(initialValue: region, maxLength: 80,
             decoration: InputDecoration(labelText: '활동 지역', hintText: '예: 서울 성북구'),
             onChanged: (value) => region = value.trim()),
+          Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+            onPressed: () => Navigator.pop(context, <String, dynamic>{'useLocation': true,
+              'school': school, 'ageBand': ageBand}),
+            icon: Icon(Icons.my_location, size: 18),
+            label: Text('현재 위치로 설정'),
+          )),
           DropdownButtonFormField<String>(
             initialValue: ageBand,
             decoration: InputDecoration(labelText: '연령대'),
@@ -3730,7 +3832,18 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         ],
       )),
     );
+    if (result != null && result['useLocation'] == true && mounted) {
+      try {
+        await api.patch('/v1/profile', {'school': result['school'], 'ageBand': result['ageBand']});
+      } catch (_) {
+        // 학교·연령대 저장이 실패해도 위치 설정은 계속한다.
+      }
+      await _useCurrentLocation();
+      return;
+    }
     if (result != null && mounted) {
+      // 지역을 직접 적었으면 기기 위치로 덮어쓰지 않는다.
+      if (useDeviceLocation && result['region'] != communityRegion) await _stopDeviceLocation();
       final point = await travelEstimator.geocode(result['region'] as String? ?? '');
       if (point != null) {
         result['regionLatitude'] = point.latitude;

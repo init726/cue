@@ -1,7 +1,8 @@
 const text = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
+// 활동 지역 좌표는 소수 둘째 자리(약 1km)로 줄여 저장한다. 기기의 정확한 위치를 남기지 않는다.
 const coordinate = (value, min, max) => value !== null && value !== '' && value !== undefined &&
   Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max
-  ? Number(value) : null;
+  ? Math.round(Number(value) * 100) / 100 : null;
 
 export function communityContext(body = {}) {
   return {
@@ -34,8 +35,8 @@ export function communityMatch(event, context = {}) {
   const proximityScore = distance == null ? 0 : distance <= 5 ? 7 : distance <= 15 ? 5 : distance <= 30 ? 2 : 0;
   return { school, region, age, score: (school ? 8 : 0) + (region ? 5 : 0) + (age ? 2 : 0) + proximityScore,
     reason: school ? '같은 학교에서 공유된 행사예요.'
-      : nearby && age ? `내 활동 지역에서 약 ${Math.max(1, Math.round(distance))}km · 같은 연령대가 공유했어요.`
-      : nearby ? `내 활동 지역에서 약 ${Math.max(1, Math.round(distance))}km 떨어진 행사예요.`
+      : nearby && age ? `내 주변 약 ${Math.max(1, Math.round(distance))}km · 같은 연령대가 공유했어요.`
+      : nearby ? `내 주변 약 ${Math.max(1, Math.round(distance))}km에서 공유된 행사예요.`
       : region ? '같은 활동 지역에서 공유된 행사예요.'
       : age ? '같은 연령대의 사용자가 공유한 행사예요.' : '' };
 }

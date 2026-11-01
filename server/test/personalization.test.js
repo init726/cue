@@ -100,7 +100,7 @@ test('signals are normalized and combined with one weight table', () => {
   assert.equal(Object.values(rankingWeights).reduce((sum, value) => sum + value, 0), 1);
 });
 
-test('one topic cannot fill the top of the list and unrelated shares only take discovery slots', () => {
+test('one topic cannot fill the top of the list and shares from people nearby get their own section', () => {
   const currentTime = Date.parse('2027-01-01T00:00:00Z');
   const at = (day) => ({ startsAt: `2027-02-0${day}T10:00:00Z`, endsAt: `2027-02-0${day}T12:00:00Z` });
   const shared = (id, owner, day) => ({ ...at(day), id, title: `동네 공연 ${id}`, domains: ['공연'], originKind: 'shared',
@@ -116,7 +116,7 @@ test('one topic cannot fill the top of the list and unrelated shares only take d
     saved: [], interests: new Map([['domain:AI', 4]]), excluded: new Set(), currentTime,
     context: { school: 'A' }, userId: 'viewer',
   });
-  assert.deepEqual(results.map((event) => event.id), ['ai1', 'ai2', 'robot', 'ai3', 's1', 's2']);
+  assert.deepEqual(results.map((event) => event.id), ['ai1', 'ai2', 'robot', 'ai3', 's1', 's2', 's3']);
   assert.ok(results.every((event) => !Object.hasOwn(event, 'discovery')));
 });
 
@@ -152,4 +152,19 @@ test('each recommendation carries its tab section and browsing never shows priva
   });
   assert.deepEqual(results.map((event) => [event.id, event.section]),
     [['ai', 'interest'], ['near', 'nearby'], ['close-music', 'explore'], ['far-art', 'explore']]);
+});
+
+test('shares near the device come first and the same age band breaks ties, whatever the interests', () => {
+  const at = { startsAt: '2099-02-01T10:00:00Z', endsAt: '2099-02-01T12:00:00Z' };
+  const shared = (id, latitude, ageBand) => ({ ...at, id, title: `공유 ${id}`, domains: ['미술'], originKind: 'shared',
+    sharingUserId: id, community: { ageBand }, locationLatitude: latitude, locationLongitude: 126.98 });
+  const results = rankRecommendations({
+    catalog: [shared('far', 37.75, '20s'), shared('near-other-age', 37.565, '40plus'), shared('near-same-age', 37.567, '20s'),
+      shared('too-far', 35.1, '20s')],
+    saved: [], interests: new Map([['domain:AI', 4]]), excluded: new Set(), currentTime: Date.parse('2099-01-01T00:00:00Z'),
+    userId: 'viewer', context: { ageBand: '20s', regionLatitude: 37.56, regionLongitude: 126.98 },
+  });
+  assert.deepEqual(results.map((event) => [event.id, event.section]),
+    [['near-same-age', 'nearby'], ['near-other-age', 'nearby'], ['far', 'nearby'], ['too-far', 'nearby']]);
+  assert.match(results[0].reason, /내 주변 약 1km · 같은 연령대/);
 });

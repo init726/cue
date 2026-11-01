@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { searchPlaces, placeMapUrl } from '../src/places.js';
+import { regionName, searchPlaces, placeMapUrl } from '../src/places.js';
 import { validateSavedEvent } from '../src/domain.js';
 import { placeFromRow } from '../src/community.js';
 
@@ -90,5 +90,29 @@ test('sharing a verified place reveals its public address, an unverified venue d
     await new Promise((resolve) => server.close(resolve));
     store.close();
     await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a device position becomes a short administrative area name', async () => {
+  const original = process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY = 'test-key';
+  let asked;
+  const fetchImpl = async (url) => {
+    asked = String(url);
+    return new Response(JSON.stringify({ documents: [
+      { region_type: 'B', region_1depth_name: '서울특별시', region_2depth_name: '중구', region_3depth_name: '을지로2가' },
+      { region_type: 'H', region_1depth_name: '서울특별시', region_2depth_name: '중구', region_3depth_name: '명동' },
+    ] }));
+  };
+  try {
+    assert.equal(await regionName(37.564, 126.985, { fetchImpl }), '서울 중구 명동');
+    assert.match(asked, /x=126.985&y=37.564/);
+    const province = async () => new Response(JSON.stringify({ documents: [
+      { region_type: 'H', region_1depth_name: '경상북도', region_2depth_name: '포항시 남구', region_3depth_name: '대잠동' }] }));
+    assert.equal(await regionName(36, 129.3, { fetchImpl: province }), '경북 포항시 남구 대잠동');
+    process.env.KAKAO_REST_API_KEY = '';
+    assert.equal(await regionName(37.5, 127, { fetchImpl }), null);
+  } finally {
+    if (original === undefined) delete process.env.KAKAO_REST_API_KEY; else process.env.KAKAO_REST_API_KEY = original;
   }
 });

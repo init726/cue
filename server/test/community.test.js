@@ -16,6 +16,9 @@ test('community matching supplements interests and source labels stay truthful',
   assert.equal(eventOrigin({}), 'catalog');
   assert.deepEqual(communityContext({ school: ' A ', region: ' B ', ageBand: 'invalid' }),
     { school: 'A', region: 'B', ageBand: '', regionLatitude: null, regionLongitude: null });
+  // 기기 위치를 보내도 약 1km 단위로만 남긴다.
+  const precise = communityContext({ regionLatitude: 37.566535, regionLongitude: 126.977969 });
+  assert.deepEqual([precise.regionLatitude, precise.regionLongitude], [37.57, 126.98]);
   assert.ok(distanceKm(
     { latitude: 37.5665, longitude: 126.9780 },
     { latitude: 37.5512, longitude: 126.9882 },

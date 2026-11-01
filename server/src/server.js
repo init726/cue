@@ -10,7 +10,7 @@ import { formats, domains } from './classification.js';
 import { demoEvents, demoEventCount, isDemoEvent } from './demo-catalog.js';
 import { exploreEnabled } from './personalization.js';
 import { communityContext } from './community.js';
-import { placesEnabled, searchPlaces } from './places.js';
+import { placesEnabled, regionName, searchPlaces } from './places.js';
 
 const port = Number(process.env.PORT || 8787);
 const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
@@ -322,6 +322,14 @@ export const server = http.createServer(async (req, res) => {
       await data.onProfileChanged(previous, profile);
       store.updateProfile(user.id, profile);
       return send(res, 200, { profile });
+    }
+    if (req.method === 'GET' && route === '/v1/places/region') {
+      // 앱이 보낸 대략적인 위치(소수 셋째 자리)를 지역 이름으로만 바꾸고 저장하지 않는다.
+      if (!placesEnabled()) return send(res, 200, { enabled: false, region: null });
+      if (!allowed(`region:${user.id}`, 20, 60 * 60 * 1000)) return send(res, 429, { error: '잠시 후 다시 시도해 주세요.' });
+      const query = new URL(req.url, 'http://localhost').searchParams;
+      const region = await regionName(Number(query.get('lat')), Number(query.get('lng')));
+      return send(res, 200, { enabled: true, region });
     }
     if (req.method === 'GET' && route === '/v1/places') {
       // 키가 없으면 enabled:false를 돌려 앱이 입력한 이름을 그대로 쓰게 한다.
