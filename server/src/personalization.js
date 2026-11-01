@@ -143,7 +143,7 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
       const score = signals.interest || discovery ? weighted(signals) : 0;
       const reason = peerCount >= 2 ? `비슷한 환경의 사용자 ${peerCount}명이 공유한 행사예요.` : community.reason || (matchedDomains.length ? `${matchedDomains.slice(0, 2).join('·')} 주제에 보인 관심을 바탕으로 추천해요.` :
         relatedScore > 0 ? '관심 주제와 가까운 분야의 행사예요.' : '');
-      return { ...event, ...classification, score, reason, discovery, ...(peerCount >= 2 ? { peerCount } : {}) };
+      return { ...event, ...classification, score, reason, discovery, distance, ...(peerCount >= 2 ? { peerCount } : {}) };
     })
     .sort((a, b) => b.score - a.score || Date.parse(a.startsAt) - Date.parse(b.startsAt));
   // seed가 있으면 점수를 조금 흔들고 방금 본 행사는 뒤로 미뤄 새로고침마다 다른 행사가 섞여 나오게 한다.
@@ -160,14 +160,21 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
       return true;
     });
   };
-  const strip = ({ discovery, ...event }) => event;
+  // section은 추천 탭의 묶음이다. interest: 관심 주제와 맞음, nearby: 가까운 사람들이 공유, explore: 둘러보기.
+  const strip = ({ discovery, distance, ...event }, section) => ({ ...event, section });
   const relevant = spreadTopics(unique(byVariety(ranked.filter((event) => event.score > 0 && !event.discovery))));
   const discovered = unique(byVariety(ranked.filter((event) => event.score > 0 && event.discovery))).slice(0, discoverySlots);
-  const matched = [...relevant.slice(0, listSize - discovered.length), ...discovered].map(strip);
+  const matched = [...relevant.slice(0, listSize - discovered.length).map((event) => strip(event, 'interest')),
+    ...discovered.map((event) => strip(event, 'nearby'))];
   if (!explore || matched.length >= exploreMinimum) return matched;
-  const reason = positiveDomains.length ? '새로운 관심사를 발견할 수 있는 행사예요.' : '지금 인기 있는 행사예요. 저장하면 취향에 맞춰 추천해요.';
-  const filler = unique(byVariety(ranked.filter((event) => event.score <= 0).map((event) => ({ ...event, score: 1, reason }))))
-    .map((event) => strip({ ...event, score: 0.01 }));
+  // 맞는 행사가 적으면 다가오는 행사를 가까운 순서로 채워 탭이 비지 않게 한다.
+  // 사용자가 공유한 행사는 같은 학교·지역·연령대에게만 보여야 하므로 둘러보기에 넣지 않는다.
+  const reason = positiveDomains.length ? '새로운 관심사를 발견할 수 있는 행사예요.' : '다가오는 행사예요. 저장할수록 취향에 맞춰 추천해요.';
+  const nearFirst = ranked.filter((event) => event.score <= 0 && event.originKind !== 'shared')
+    .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity) || Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  // 가까운 순서를 기본 점수로 두고 새로고침 seed로 섞는다.
+  const filler = unique(byVariety(nearFirst.map((event, index) => ({ ...event, score: 1 - index / (nearFirst.length + 1) }))))
+    .map((event) => strip({ ...event, score: 0.01, reason }, 'explore'));
   return [...matched, ...filler].slice(0, Math.max(exploreSize, matched.length));
 }
 

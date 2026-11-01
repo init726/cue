@@ -85,7 +85,9 @@ test('analysis stops after rejection and approved interests drive recommendation
       { title: '전시회', venue: '서울', startsAt: '2027-02-01T18:00:00+09:00', endsAt: '2027-02-01T20:00:00+09:00', category: '전시' },
     ] });
     assert.equal(catalog.status, 200);
-    assert.equal((await request('/v1/recommendations', token, null, 'GET')).body.events.length, 0);
+    // 관심사가 생기기 전에는 맞춤 추천 없이 둘러보기 행사만 보여준다.
+    const cold = (await request('/v1/recommendations', token, null, 'GET')).body.events;
+    assert.ok(cold.length > 0 && cold.every((event) => event.section === 'explore'));
     const profileOff = await request('/v1/profile', token, { personalizationEnabled: false }, 'PATCH');
     assert.equal(profileOff.body.profile.personalizationEnabled, false);
     assert.equal((await request('/v1/recommendations', token, null, 'GET')).body.events.length, 0);
@@ -98,7 +100,8 @@ test('analysis stops after rejection and approved interests drive recommendation
     assert.equal(saved.status, 201);
     assert.equal(saved.body.event.calendarEventId, 'device-event');
     const recommendations = await request('/v1/recommendations', token, null, 'GET');
-    assert.deepEqual(recommendations.body.events.map((event) => event.title), ['다른 음악회']);
+    assert.deepEqual(recommendations.body.events.map((event) => [event.title, event.section]),
+      [['다른 음악회', 'interest'], ['전시회', 'explore']]);
     const other = await request('/v1/session', null, {});
     assert.equal((await request('/v1/interactions', other.body.token, {
       eventId: saved.body.event.id, action: 'interested',
@@ -114,19 +117,23 @@ test('analysis stops after rejection and approved interests drive recommendation
     assert.equal(updated.body.event.createdAt, saved.body.event.createdAt);
     assert.equal(updated.body.event.reminderMinutes, -1);
     const exhibitionRecommendations = await request('/v1/recommendations', token, null, 'GET');
-    assert.deepEqual(exhibitionRecommendations.body.events.map((event) => event.title), ['전시회']);
-    const exhibitionId = exhibitionRecommendations.body.events[0].id;
+    assert.deepEqual(exhibitionRecommendations.body.events.filter((event) => event.section === 'interest')
+      .map((event) => event.title), ['전시회']);
+    const exhibitionId = exhibitionRecommendations.body.events.find((event) => event.section === 'interest').id;
+    const personal = async () => (await request('/v1/recommendations', token, null, 'GET')).body.events
+      .filter((event) => event.section !== 'explore');
     assert.equal((await request(route, token, null, 'DELETE')).status, 200);
     assert.equal((await request('/v1/me', token, null, 'GET')).body.saved.length, 0);
-    assert.equal((await request('/v1/recommendations', token, null, 'GET')).body.events.length, 1);
+    assert.equal((await personal()).length, 1);
     assert.equal((await request('/v1/interactions', token, { eventId: exhibitionId, action: 'interested' })).status, 201);
-    assert.equal((await request('/v1/recommendations', token, null, 'GET')).body.events.length, 1);
+    assert.equal((await personal()).length, 1);
     const goal = await request('/v1/goals', token, { eventId: exhibitionId });
     assert.equal(goal.status, 201);
     assert.equal(goal.body.goal.relatedEventId, exhibitionId);
     assert.equal((await request('/v1/goals', token, null, 'GET')).body.goals.length, 1);
     assert.equal((await request('/v1/interactions', token, { eventId: exhibitionId, action: 'not_interested' })).status, 201);
-    assert.equal((await request('/v1/recommendations', token, null, 'GET')).body.events.length, 0);
+    const afterDismiss = (await request('/v1/recommendations', token, null, 'GET')).body.events;
+    assert.ok(afterDismiss.every((event) => event.id !== exhibitionId && event.section === 'explore'));
   } finally {
     globalThis.fetch = realFetch;
     await new Promise((resolve) => server.close(resolve));

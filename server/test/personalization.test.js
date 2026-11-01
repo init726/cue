@@ -135,3 +135,21 @@ test('activity regions compare by distance, not by how the name is written', () 
   });
   assert.match(noCoordinates[0].reason, /같은 활동 지역/);
 });
+
+test('each recommendation carries its tab section and browsing never shows private-audience shares', () => {
+  const currentTime = Date.parse('2027-01-01T00:00:00Z');
+  const at = (day) => ({ startsAt: `2027-02-0${day}T10:00:00Z`, endsAt: `2027-02-0${day}T12:00:00Z` });
+  const results = rankRecommendations({
+    catalog: [
+      { ...at(1), id: 'ai', title: 'AI 세미나', domains: ['AI'] },
+      { ...at(2), id: 'near', title: '동네 공연', domains: ['공연'], originKind: 'shared', sharingUserId: 'p', community: { school: 'A' } },
+      { ...at(3), id: 'far-art', title: '미술 개인전', domains: ['미술'], locationLatitude: 35.1, locationLongitude: 129 },
+      { ...at(4), id: 'close-music', title: '재즈 공연', domains: ['음악'], locationLatitude: 37.56, locationLongitude: 126.98 },
+      { ...at(5), id: 'stranger', title: '다른 학교 공연', domains: ['공연'], originKind: 'shared', sharingUserId: 'q', community: { school: 'B' } },
+    ],
+    saved: [], interests: new Map([['domain:AI', 4]]), excluded: new Set(), currentTime, explore: true,
+    context: { school: 'A', regionLatitude: 37.55, regionLongitude: 126.98 }, userId: 'viewer',
+  });
+  assert.deepEqual(results.map((event) => [event.id, event.section]),
+    [['ai', 'interest'], ['near', 'nearby'], ['close-music', 'explore'], ['far-art', 'explore']]);
+});

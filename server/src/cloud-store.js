@@ -1,6 +1,6 @@
 import { eventOrigin } from './community.js';
 import { randomUUID } from 'node:crypto';
-import { exploreEnabled, interestSignals, memoryFromSignal, rankRecommendations } from './personalization.js';
+import { interestSignals, memoryFromSignal, rankRecommendations } from './personalization.js';
 import { classifyEvent } from './classification.js';
 
 const tables = new Set([
@@ -288,7 +288,7 @@ export class CloudStore {
     const excluded = new Set(links.filter((row) => ['saved', 'planned', 'completed', 'dismissed', 'unsaved'].includes(row.status))
       .map((row) => row.event_id));
     const catalog = catalogRows.map((row) => eventFromRow(row));
-    const results = rankRecommendations({ catalog, saved, interests, excluded, explore: exploreEnabled(), seed, seen,
+    const results = rankRecommendations({ catalog, saved, interests, excluded, explore: true, seed, seen,
       context: { school: profile.school, region: profile.region, ageBand: profile.age_band,
         regionLatitude: profile.region_latitude == null ? null : Number(profile.region_latitude),
         regionLongitude: profile.region_longitude == null ? null : Number(profile.region_longitude) }, userId: this.userId });

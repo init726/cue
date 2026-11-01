@@ -239,7 +239,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   String communitySchool = '';
   String communityRegion = '';
   String communityAgeBand = '';
-  String recommendationSource = 'all';
+  String? recommendationError;
+  List<String> interestLabels = [];
   bool sharingEvent = false;
   bool preventDuplicateEvents = true;
   bool checkScheduleConflicts = true;
@@ -371,12 +372,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           (prefs.getStringList('pending_event_deletions') ?? [])..remove(id),
         );
       }
-      final responses = await Future.wait([
-        api.get('/v1/me'),
-        api.get(recommendationRoute),
-      ]);
-      final me = responses[0];
-      final recs = responses[1];
+      // 추천은 새 행사를 찾느라 오래 걸릴 수 있어 내 일정과 따로 불러온다.
+      final me = await api.get('/v1/me');
       if (!mounted) return;
       setState(() {
         final profile = me['profile'] as Map<String, dynamic>? ?? {};
@@ -399,9 +396,16 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             .cast<Map<String, dynamic>>()
             .where((event) => !pendingIds.contains(event['id']))
             .toList();
-        recommended = (recs['events'] as List<dynamic>? ?? [])
-            .cast<Map<String, dynamic>>();
-        recommendationLoading = false;
+        final interestRows = (me['interests'] as List<dynamic>? ?? [])
+            .whereType<Map<String, dynamic>>()
+            .where((row) => (row['interestKey'] as String? ?? '').startsWith('domain:') &&
+                ((row['score'] as num?) ?? 0) > 0 && row['interestKey'] != 'domain:기타')
+            .toList()
+          ..sort((a, b) => ((b['score'] as num?) ?? 0).compareTo((a['score'] as num?) ?? 0));
+        interestLabels = interestRows
+            .map((row) => (row['interestKey'] as String).substring(7))
+            .take(3)
+            .toList();
         apiError = null;
         apiErrorDetail = null;
       });
@@ -409,12 +413,32 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         await prefs.setBool('cue_onboarding_completed', true);
       }
       if (cloudConnected) unawaited(_backfillSavedLocations());
+      await _loadRecommendations(recommendationRoute);
     } catch (error) {
       if (mounted) {
         setState(() {
           recommendationLoading = false;
           apiError = _friendly(error);
           apiErrorDetail = error.toString();
+        });
+      }
+    }
+  }
+
+  Future<void> _loadRecommendations(String route) async {
+    try {
+      final recs = await api.get(route);
+      if (!mounted) return;
+      setState(() {
+        recommended = (recs['events'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+        recommendationError = null;
+        recommendationLoading = false;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          recommendationLoading = false;
+          recommendationError = _friendly(error);
         });
       }
     }
@@ -662,7 +686,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                     SizedBox(height: 16),
                     CueScheduleFields(
                       start: start,
-                      end: end,
+                      length: end.difference(start),
                       onChanged: (nextStart, nextEnd) => setSheet(() {
                         start = nextStart;
                         end = nextEnd;
@@ -2434,10 +2458,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             : _date(startsAt!)),
         style: OutlinedButton.styleFrom(minimumSize: Size.fromHeight(54), foregroundColor: accent),
       ),
-      if (startsAt != null) ...[
-        SizedBox(height: 8),
-        Text('종료 ${_date(endsAt!)}', style: TextStyle(color: muted, fontSize: 13)),
-      ],
+
     ],
   ));
 
@@ -2895,56 +2916,83 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     ],
   );
 
-  Widget _discover() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _pageTitle('추천 행사', '관심 분야와 가까운 행사'),
-      SizedBox(height: 8),
-      Wrap(
-        spacing: 8,
-        children: [
-          for (final source in (const {'all': '전체', 'web': '웹에서 찾은 행사', 'shared': '사용자 공유'}).entries)
-            ChoiceChip(
-              label: Text(source.value),
-              selected: recommendationSource == source.key,
-              onSelected: (_) => setState(() => recommendationSource = source.key),
+  // 추천 탭은 서버가 붙인 묶음(section) 순서로 보여준다. 예전 서버는 묶음이 없으므로 맞춤 추천으로 본다.
+  static const _recommendationSections = [
+    ('interest', '취향에 맞는 행사', '저장하고 관심 표시한 분야를 바탕으로 골랐어요.'),
+    ('nearby', '가까운 사람들이 공유한 행사', '같은 학교·지역·연령대가 직접 공유했어요.'),
+    ('explore', '이런 행사는 어때요?', '관심 분야 밖이지만 가깝고 곧 열리는 행사예요.'),
+  ];
+
+  Widget _discover() {
+    final sections = <String, List<Map<String, dynamic>>>{};
+    for (final event in recommended) {
+      sections.putIfAbsent(event['section'] as String? ?? 'interest', () => []).add(event);
+    }
+    final noCommunity = communitySchool.isEmpty && communityRegion.isEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: _pageTitle('추천 행사', interestLabels.isEmpty
+              ? '저장한 행사로 취향을 배워요'
+              : '${interestLabels.join('·')}에 관심이 많아요')),
+          IconButton.filledTonal(
+            onPressed: recommendationLoading ? null : () => _refresh(shuffle: true),
+            icon: Icon(Icons.refresh_rounded),
+            tooltip: '다른 행사 보기',
+          ),
+        ]),
+        SizedBox(height: 16),
+        if (recommendationLoading && recommended.isEmpty)
+          _empty(Icons.search, '행사를 찾고 있어요', '새 행사를 찾을 때는 1분 정도 걸릴 수 있어요.')
+        else if (recommendationError != null && recommended.isEmpty)
+          _card(Column(children: [
+            Icon(Icons.cloud_off_outlined, color: muted, size: 30),
+            SizedBox(height: 10),
+            Text('추천을 불러오지 못했어요', style: TextStyle(color: ink, fontWeight: FontWeight.w800, fontSize: 16)),
+            SizedBox(height: 5),
+            Text(recommendationError!, textAlign: TextAlign.center, style: TextStyle(color: muted, height: 1.45)),
+            SizedBox(height: 12),
+            OutlinedButton(onPressed: () => _refresh(), child: Text('다시 시도')),
+          ]))
+        else if (recommended.isEmpty)
+          _empty(Icons.explore_outlined, '아직 보여드릴 행사가 없어요',
+              '포스터를 하나 저장하면 비슷한 행사를 찾아드려요. 오른쪽 위 버튼으로 다시 찾을 수 있어요.'),
+        for (final (key, title, defaultSubtitle) in _recommendationSections)
+          if (sections[key]?.isNotEmpty == true) ...[
+            Padding(
+              padding: EdgeInsets.only(top: 6, bottom: 10),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: TextStyle(color: ink, fontSize: 18, fontWeight: FontWeight.w800)),
+                SizedBox(height: 3),
+                Text(key == 'explore' && interestLabels.isEmpty
+                    ? '가깝고 곧 열리는 행사부터 보여드려요. 저장할수록 취향에 맞춰져요.'
+                    : defaultSubtitle, style: TextStyle(color: muted, fontSize: 13)),
+              ]),
             ),
-        ],
-      ),
-      TextButton.icon(
-        onPressed: _editCommunity,
-        icon: Icon(Icons.tune),
-        label: Text('학교·활동 지역으로 추천받기'),
-      ),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton.icon(
-          onPressed: recommendationLoading ? null : () => _refresh(shuffle: true),
-          icon: Icon(Icons.shuffle, size: 18),
-          label: Text('다른 행사 보기'),
-          style: TextButton.styleFrom(padding: EdgeInsets.zero),
-        ),
-      ),
-      SizedBox(height: 6),
-      if (recommendationLoading && recommended.isEmpty)
-        _empty(Icons.search, '관련 행사 확인 중', '행사 정보를 확인하고 있어요.'),
-      if (!recommendationLoading && recommended.isEmpty)
-        _empty(
-          Icons.explore_outlined,
-          '아직 추천할 행사가 없어요',
-          '행사 포스터를 저장하면 관심 분야에 맞는 행사를 찾아드려요. 아래로 당겨서 새로고침할 수도 있어요.',
-        ),
-      for (final event in recommended) ...[
-        if (recommendationSource == 'all' || event['originKind'] == recommendationSource) ...[
-          _eventTile(event, recommended: true),
-          SizedBox(height: 11),
-        ],
+            for (final event in sections[key]!) ...[
+              _eventTile(event, recommended: true),
+              SizedBox(height: 11),
+            ],
+            SizedBox(height: 12),
+          ],
+        if (noCommunity)
+          _card(Row(children: [
+            Icon(Icons.near_me_outlined, color: accent),
+            SizedBox(width: 12),
+            Expanded(child: Text('활동 지역을 알려주면 가까운 행사부터 보여드려요.',
+                style: TextStyle(color: ink, height: 1.45))),
+            TextButton(onPressed: _editCommunity, child: Text('설정')),
+          ]))
+        else
+          TextButton.icon(
+            onPressed: _editCommunity,
+            icon: Icon(Icons.tune),
+            label: Text('학교·활동 지역 바꾸기'),
+          ),
       ],
-      if (recommended.isNotEmpty && recommendationSource != 'all' &&
-          !recommended.any((event) => event['originKind'] == recommendationSource))
-        _empty(Icons.event_note_outlined, '이 출처의 추천이 아직 없어요', '다른 출처를 선택하거나 나중에 다시 확인해 주세요.'),
-    ],
-  );
+    );
+  }
 
   Widget _settings() {
     final section = settingsSection;
@@ -3428,7 +3476,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
             sourceKind: recommended ? event['originKind'] as String? ?? 'catalog' : null,
             participationFee: event['participationFee'] as String?,
           ),
-          if (recommended && event['reason'] is String && (event['reason'] as String).trim().isNotEmpty) ...[
+          // 둘러보기 묶음은 머리말이 이유를 설명하므로 카드마다 같은 문장을 반복하지 않는다.
+          if (recommended && event['section'] != 'explore' &&
+              event['reason'] is String && (event['reason'] as String).trim().isNotEmpty) ...[
             SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,

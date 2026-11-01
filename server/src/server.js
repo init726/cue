@@ -27,9 +27,10 @@ const fallbackTopics = ['기술', '음악', '공연', '강연', '워크숍', '�
 async function discoverFor(data, userId) {
   const interests = new Map((await data.interests(userId)).map((row) => [row.interestKey, row.score]));
   // 관심 상위 분야를 돌아가며 찾는다. 최근에 찾은 주제는 건너뛰어 새로고침마다 다른 분야가 채워진다.
-  // 관심사가 없으면 찾은 행사가 점수를 얻지 못해 추천되지 않으므로, 탐색 추천을 보여주는 시연 모드에서만 기본 주제를 쓴다.
-  const candidates = [...discoveryTopics(interests),
-    ...(exploreEnabled() ? fallbackTopics.map((topic) => ({ topic, subject: topic })) : [])];
+  // 관심사가 없으면 기본 주제로 찾는다. 찾은 행사는 둘러보기 묶음으로 보여준다.
+  const topics = discoveryTopics(interests);
+  const candidates = [...topics,
+    ...(exploreEnabled() || !topics.length ? fallbackTopics.map((topic) => ({ topic, subject: topic })) : [])];
   const jobs = candidates.map(({ topic, subject }) => discoveryJobs.get(`${topic}:${subject}`));
   const running = jobs.find((job) => job && !job.done);
   if (running) {

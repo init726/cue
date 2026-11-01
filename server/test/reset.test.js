@@ -31,9 +31,9 @@ test('resetting interests clears learned data but keeps saved events', async () 
     const after = (await call('/v1/me', token, null, 'GET')).body;
     assert.deepEqual(after.interests, []);
     assert.equal(after.saved.length, 1);
-    // 관심사가 비었으므로 추천도 처음 상태(개인화 추천 없음)로 돌아간다.
+    // 관심사가 비었으므로 추천도 처음 상태(맞춤 추천 없이 둘러보기만)로 돌아간다.
     const again = (await call('/v1/recommendations', token, null, 'GET')).body.events;
-    assert.equal(again.length, 0);
+    assert.ok(again.every((event) => event.section === 'explore'));
     assert.equal((await call('/v1/memories', token, null, 'GET')).body.memories.length, 0);
   } finally { server.close(); }
 });
