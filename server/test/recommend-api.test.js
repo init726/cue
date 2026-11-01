@@ -8,7 +8,7 @@ test('chosen topics, calendar busy times and the admin refresh work through the 
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cue-recommend-'));
   // 실제 키가 .env에 있어도 외부 API를 부르지 않는다.
   Object.assign(process.env, { CUE_TEST_MODE: '1', CUE_DEMO_MODE: '0', SUPABASE_URL: '', SUPABASE_PUBLISHABLE_KEY: '',
-    OPENAI_API_KEY: '', SEOUL_OPEN_API_KEY: '', KAKAO_REST_API_KEY: '', DISCOVERY_DAILY_TOPICS: 'none',
+    OPENAI_API_KEY: '', SEOUL_OPEN_API_KEY: '', TOUR_API_KEY: '', KAKAO_REST_API_KEY: '', DISCOVERY_DAILY_TOPICS: 'none',
     CATALOG_ADMIN_TOKEN: 'admin-token', CUE_DB_FILE: path.join(directory, 'test.sqlite'), CUE_DATA_FILE: path.join(directory, 'missing.json') });
   const { server } = await import('../src/server.js');
   const { store } = await import('../src/store.js');

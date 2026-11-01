@@ -97,7 +97,8 @@ const peerEventKey = (event) => `${String(event.title || '').toLowerCase().repla
 
 // 추천 점수는 신호마다 0~1로 맞춘 뒤 아래 가중치로 더한다. 가중치를 바꿀 때는 이 표만 고친다.
 export const rankingWeights = Object.freeze({ interest: 0.5, peer: 0.15, proximity: 0.15, affinity: 0.1, urgency: 0.1 });
-const listSize = 12;
+// 더 많은 행사를 보여주는 것이 목적이라 관심 분야 묶음은 20개까지 둔다.
+const listSize = 20;
 // 다른 사용자가 공유한 행사는 '내 주변' 묶음에 이 개수까지 보여준다.
 const communitySlots = 5;
 // 공유 행사끼리는 거리를 가장 크게 보고, 같은 학교·연령대, 관심사, 여러 명이 공유했는지 순으로 본다.
@@ -172,7 +173,13 @@ const weekdayNames = ['일', '월', '화', '수', '목', '금', '토'];
 const kstDate = (ms) => kst(ms).toISOString().slice(0, 10);
 const kstClock = (ms) => kst(ms).toISOString().slice(11, 16);
 
-export function rankRecommendations({ catalog, saved, interests: learned, excluded, currentTime = Date.now(), explore = false, seed = null, seen = new Set(), context = {}, userId = null, favorites = [], busy = null }) {
+const peerSlots = 6;
+const localSlots = 6;
+const localKm = 20;
+const isFestival = (event) => event.category === '지역 축제' || event.category === '음악 페스티벌' ||
+  event.category === '푸드 페스티벌' || /축제|페스티벌|페스타|festival/i.test(String(event.title || ''));
+
+export function rankRecommendations({ catalog, saved, interests: learned, excluded, currentTime = Date.now(), explore = false, seed = null, seen = new Set(), context = {}, userId = null, favorites = [], busy = null, peerCounts = null }) {
   const interests = withFavorites(learned, favorites);
   // Old profile keys can still be read until the store recomputes them.
   const positiveDomains = [...interests.entries()].filter(([key, score]) => key.startsWith('domain:') && score > 0);
@@ -268,7 +275,23 @@ export function rankRecommendations({ catalog, saved, interests: learned, exclud
       const start = Date.parse(event.startsAt);
       return strip({ ...event, reason: `${weekdayNames[kst(start).getUTCDay()]}요일 ${kstClock(start)}에 캘린더가 비어 있어요.` }, 'fits');
     });
-  const planned = [...fits, ...sameDay];
+  // 비슷한 환경의 사람들이 일정에 넣거나 관심 표시한 공개 행사(사람 수만 보여준다).
+  const peers = !peerCounts ? [] : take(unique(ranked.filter((event) => event.originKind !== 'shared' && peerCounts.has(event.id))
+    .sort((a, b) => peerCounts.get(b.id).count - peerCounts.get(a.id).count || byRelevance(a, b))).slice(0, peerSlots))
+    .map((event) => {
+      const { count, similar } = peerCounts.get(event.id);
+      return strip({ ...event, peerCount: count, reason: similar
+        ? `비슷한 환경의 ${count}명이 일정에 넣거나 관심 표시했어요.`
+        : `Cue 사용자 ${count}명이 일정에 넣거나 관심 표시했어요.` }, 'peers');
+    });
+
+  // 활동 지역 20km 안의 행사는 관심 분야와 상관없이 따로 보여준다. 축제를 먼저, 그다음 관심도·날짜 순.
+  // 사용자가 공유한 행사는 '내 주변에서 공유된 행사' 묶음에서 따로 보여준다.
+  const local = take(unique(ranked.filter((event) => event.originKind !== 'shared' && event.distance != null && event.distance <= localKm)
+    .sort((a, b) => isFestival(b) - isFestival(a) || byRelevance(a, b))).slice(0, localSlots))
+    .map((event) => strip({ ...event, reason: `내 지역 약 ${Math.max(1, Math.round(event.distance))}km${isFestival(event) ? ' · 축제' : ''}` }, 'local'));
+
+  const planned = [...fits, ...sameDay, ...peers, ...local];
   const rest = ranked.filter((event) => !picked.has(event.id));
   const relevant = spreadTopics(unique(byVariety(rest.filter((event) => event.score > 0 && !event.discovery))));
   const discovered = unique(byVariety(rest.filter((event) => event.score > 0 && event.discovery))).slice(0, communitySlots);

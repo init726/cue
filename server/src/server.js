@@ -13,6 +13,7 @@ import { cleanTopics, communityContext } from './community.js';
 import { placesEnabled, regionName, searchPlaces } from './places.js';
 import { weatherAt } from './weather.js';
 import { discoverSeoulEvents } from './seoul.js';
+import { discoverTourFestivals } from './tour.js';
 
 const port = Number(process.env.PORT || 8787);
 const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
@@ -69,7 +70,7 @@ async function discoverFor(data, userId, { parallel = 1 } = {}) {
 
 // 하루 한 번 예약 작업이 부르는 카탈로그 채우기. 서울시 문화행사 API(무료)를 먼저 가져오고,
 // 공식 데이터가 없는 분야만 웹 검색(OpenAI 비용)으로 찾는다. 이미 있는 행사는 원 안내 주소로 건너뛴다.
-const dailyTopics = () => String(process.env.DISCOVERY_DAILY_TOPICS || '기술,강연,채용·커리어,팝업스토어,스포츠,워크숍')
+const dailyTopics = () => String(process.env.DISCOVERY_DAILY_TOPICS || '기술,강연,채용·커리어,팝업스토어,스포츠,워크숍,지역 축제,음악 페스티벌,푸드 페스티벌')
   .split(',').map((topic) => topic.trim()).filter(Boolean).slice(0, 12);
 let catalogRefresh = null;
 async function importNew(events) {
@@ -88,11 +89,17 @@ async function importNew(events) {
   return fresh.length;
 }
 export async function refreshCatalog() {
-  const report = { seoul: 0, web: {} };
+  const report = { seoul: 0, tour: 0, web: {} };
   try {
     report.seoul = await importNew(await discoverSeoulEvents());
   } catch (error) {
     report.seoulError = error instanceof Error ? error.message : String(error);
+  }
+  // 전국 축제(한국관광공사). 내 지역이 아니어도 관심 분야 축제를 보여주기 위해 가져온다.
+  try {
+    report.tour = await importNew(await discoverTourFestivals());
+  } catch (error) {
+    report.tourError = error instanceof Error ? error.message : String(error);
   }
   for (const topic of dailyTopics()) {
     try {
@@ -295,7 +302,8 @@ export const server = http.createServer(async (req, res) => {
       // places는 지도 검색 키가 설정됐는지만 알린다. 키 값은 내보내지 않는다.
       // version은 Render가 넣어 주는 배포 커밋. 어떤 코드가 돌고 있는지 밖에서 확인할 수 있다.
       return send(res, database === 'error' ? 503 : 200, { ok: database !== 'error', database, places: placesEnabled(),
-        seoul: Boolean(process.env.SEOUL_OPEN_API_KEY), version: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || null });
+        seoul: Boolean(process.env.SEOUL_OPEN_API_KEY), tour: Boolean(process.env.TOUR_API_KEY),
+        version: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || null });
     }
 
     if (req.method === 'POST' && route === '/v1/session') {

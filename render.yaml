@@ -28,5 +28,7 @@ services:
         sync: false
       - key: SEOUL_OPEN_API_KEY
         sync: false
+      - key: TOUR_API_KEY
+        sync: false
       - key: CATALOG_ADMIN_TOKEN
         sync: false

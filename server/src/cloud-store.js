@@ -2,6 +2,7 @@ import { eventOrigin, placeFromRow } from './community.js';
 import { randomUUID } from 'node:crypto';
 import { interestSignals, memoryFromSignal, rankRecommendations } from './personalization.js';
 import { classifyEvent } from './classification.js';
+import { cloudPeerData, peerCounts } from './peers.js';
 
 const tables = new Set([
   'profiles', 'events', 'event_sessions', 'user_events', 'event_interactions',
@@ -291,11 +292,14 @@ export class CloudStore {
     const excluded = new Set(links.filter((row) => ['saved', 'planned', 'completed', 'dismissed', 'unsaved'].includes(row.status))
       .map((row) => row.event_id));
     const catalog = catalogRows.map((row) => eventFromRow(row));
+    // 다른 사람들의 저장 기록은 서버 키로 읽어 사람 수만 센다. 읽지 못하면 이 묶음만 빼고 추천한다.
+    const peers = await cloudPeerData().then((data) => peerCounts({ ...data, viewerId: this.userId, viewer: profile }))
+      .catch((error) => { console.error('Peer data:', error instanceof Error ? error.message : error); return null; });
     const results = rankRecommendations({ catalog, saved, interests, excluded, explore: true, seed, seen,
       context: { school: profile.school, region: profile.region, ageBand: profile.age_band,
         regionLatitude: profile.region_latitude == null ? null : Number(profile.region_latitude),
         regionLongitude: profile.region_longitude == null ? null : Number(profile.region_longitude) }, userId: this.userId,
-      favorites: Array.isArray(profile.favorite_topics) ? profile.favorite_topics : [], busy });
+      favorites: Array.isArray(profile.favorite_topics) ? profile.favorite_topics : [], busy, peerCounts: peers });
     // 추천 기록 저장은 응답을 막지 않는다.
     this.insert('recommendations', results.map((event) => ({
       user_id: this.userId, event_id: event.id,

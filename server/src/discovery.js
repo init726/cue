@@ -41,9 +41,12 @@ const isWithin = (value, domain) => {
 
 const topicsByDomain = { AI: ['기술'], 소프트웨어: ['기술'], 로봇: ['기술'], 과학: ['기술'], 창업: ['창업·스타트업', '기술'],
   정책: ['교육'], 교육: ['교육'], 미술: ['미술 전시'], 디자인: ['디자인 전시', '전시'], 음악: ['음악'], 공연: ['공연'],
-  음식: ['커피·와인', '푸드 페스티벌'], 문화: ['전시', '공연'], 영화: ['영화·상영회'], 책: ['북토크'],
+  음식: ['커피·와인', '푸드 페스티벌', '지역 축제'], 문화: ['전시', '공연', '지역 축제'], 영화: ['영화·상영회'], 책: ['북토크'],
   스포츠: ['스포츠', '러닝'], 건강: ['요가·피트니스'], 게임: ['e스포츠·게임'], 커리어: ['채용·커리어', '네트워킹'],
-  패션: ['팝업스토어'], 여행: ['아웃도어'], 환경: ['봉사'], 반려동물: ['반려동물'], 역사: ['박물관·역사'] };
+  패션: ['팝업스토어'], 여행: ['아웃도어', '지역 축제'], 환경: ['봉사'], 반려동물: ['반려동물'], 역사: ['박물관·역사', '지역 축제'] };
+// 축제는 내 지역에 국한하지 않고 전국에서 찾는다.
+const nationwideTopics = new Set(['지역 축제', '음악 페스티벌', '푸드 페스티벌']);
+const festivalHints = ['korean.visitkorea.or.kr', 'mcst.go.kr', '시·군·구청과 축제 공식 홈페이지'];
 
 // 관심 상위 세 분야를 검색 주제로 바꾼다. 같은 주제로 묶이는 분야는 subject에 함께 담는다.
 export function discoveryTopics(interests) {
@@ -122,12 +125,15 @@ export async function discoverEvents(topic, { fetchImpl = fetch, currentTime = D
     body: JSON.stringify({
       // 검색을 여러 번 이어 가는 추론 모델을 쓴다. 한 번만 검색하는 모델은 결과가 거의 없었다.
       model: process.env.DISCOVERY_MODEL || 'gpt-5-mini', store: false, reasoning: { effort: 'low' },
-      tools: [{ type: 'web_search', search_context_size: 'high', user_location: { type: 'approximate', country: 'KR', city: 'Seoul', timezone: 'Asia/Seoul' } }],
+      tools: [{ type: 'web_search', search_context_size: 'high', user_location: nationwideTopics.has(topic)
+        ? { type: 'approximate', country: 'KR', timezone: 'Asia/Seoul' }
+        : { type: 'approximate', country: 'KR', city: 'Seoul', timezone: 'Asia/Seoul' } }],
       tool_choice: 'required', include: ['web_search_call.action.sources'],
       input: [
-        `현재 ${new Date(currentTime).toISOString()}. 한국(서울과 수도권 우선)에서 앞으로 60일 안에 열리는 실제 '${topic}' 행사(${family} 분야${subject !== topic ? `, 관련 주제: ${subject}` : ''})를 찾으세요.`,
+        `현재 ${new Date(currentTime).toISOString()}. ${nationwideTopics.has(topic) ? '한국 전국 어디든' : '한국(서울과 수도권 우선)'}에서 앞으로 60일 안에 열리는 실제 '${topic}' 행사(${family} 분야${subject !== topic ? `, 관련 주제: ${subject}` : ''})를 찾으세요.`,
         `검색어를 바꿔 가며 여러 번 검색하고 최대 ${discoveryLimit}개를 반환하세요.`,
         officialDomains[family] ? `site:${officialDomains[family].join(' 또는 site:')} 사이트에서만 찾으세요.`
+          : nationwideTopics.has(topic) ? `대한민국 구석구석(${festivalHints.join(', ')}) 같은 축제 안내 페이지를 먼저 찾아보고, 팝업스토어나 상업 할인 행사는 제외하세요.`
           : siteHints[family] ? `행사가 많이 올라오는 ${siteHints[family].join(', ')} 같은 사이트와 주최 기관 페이지를 먼저 찾아보세요.` : '',
         '각 행사는 주최자·공공기관·예매처·행사 플랫폼의 개별 상세 페이지에서 제목, 날짜와 시간, 장소를 확인한 것만 넣으세요. 검색 결과 목록·검색 페이지·홈페이지 주소는 제외하세요. 페이지에 근거가 없으면 반환하지 마세요.',
         'sourceUrl은 확인한 상세 페이지 URL 그대로여야 합니다. startsAt과 endsAt은 +09:00을 포함한 ISO 8601로 쓰세요.',

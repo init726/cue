@@ -1,3 +1,4 @@
+import { peerCounts, peerStatuses } from './peers.js';
 import { communityContext, eventOrigin, placeFromRow, cleanTopics } from './community.js';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
@@ -341,8 +342,12 @@ export const store = {
       this.recomputeInterests(userId);
     const interests = new Map(this.interests(userId).map((item) => [item.interestKey,item.score]));
     const excluded = new Set(db.prepare("SELECT event_id FROM user_events WHERE user_id=? AND status IN ('saved','planned','completed','dismissed','unsaved')").all(userId).map((item) => item.event_id));
+    const links = db.prepare(`SELECT ue.user_id AS userId, ue.event_id AS eventId FROM user_events ue JOIN events e ON e.id=ue.event_id
+      WHERE e.source_type='catalog' AND e.end_at > ? AND ue.status IN (${peerStatuses.map(() => '?').join(',')})`).all(now(), ...peerStatuses);
+    const profiles = new Map([...new Set(links.map((link) => link.userId))].map((id) => [id, this.profile(id)]));
     const results = rankRecommendations({ catalog: this.catalog(), saved: this.saved(userId), interests, excluded, explore: true, seed, seen,
-      context: profile, userId, favorites: profile.favoriteTopics, busy });
+      context: profile, userId, favorites: profile.favoriteTopics, busy,
+      peerCounts: peerCounts({ links, profiles, viewerId: userId, viewer: profile }) });
     for (const event of results) {
       db.prepare(`INSERT INTO recommendations(id,user_id,event_id,recommendation_score,reason,created_at) VALUES(?,?,?,?,?,?)
         ON CONFLICT(user_id,event_id) DO UPDATE SET recommendation_score=excluded.recommendation_score,reason=excluded.reason`)

@@ -51,6 +51,17 @@ const titleCategories = [
   [/키즈|어린이/, '가족·키즈', null],
   [/박물관|유물|문화재/, '박물관·역사', ['역사', '문화']],
 ];
+// 행사 종류별 기본 분야(categories.js와 같은 이름).
+const categoryDomains = {
+  음악: ['음악'], 콘서트: ['음악'], 클래식: ['음악'], 재즈: ['음악'], '힙합·밴드': ['음악'], 국악: ['음악', '공연'], '음악 페스티벌': ['음악'],
+  전시: ['미술', '문화'], '미술 전시': ['미술', '문화'], '사진 전시': ['미술', '문화'], '디자인 전시': ['디자인'], '박물관·역사': ['역사', '문화'], 박람회: ['문화'],
+  공연: ['공연', '문화'], 뮤지컬: ['공연', '문화'], 연극: ['공연', '문화'], 무용: ['공연', '문화'], '오페라·발레': ['공연', '음악'], '코미디·마술': ['공연'],
+  스포츠: ['스포츠'], '경기 관람': ['스포츠'], 러닝: ['스포츠', '건강'], '요가·피트니스': ['건강'], 아웃도어: ['여행', '스포츠'], 'e스포츠·게임': ['게임'],
+  음식: ['음식'], '푸드 페스티벌': ['음식'], '커피·와인': ['음식'],
+  교육: ['교육'], 강연: ['교육'], '세미나·컨퍼런스': ['교육'], 워크숍: ['교육'], '원데이 클래스': ['교육'], 북토크: ['책'], 기술: ['소프트웨어'], '해커톤·공모전': ['소프트웨어', '창업'],
+  '채용·커리어': ['커리어'], '창업·스타트업': ['창업'], 네트워킹: ['커리어'],
+  팝업스토어: ['패션'], '마켓·플리마켓': ['문화'], '영화·상영회': ['영화'], '지역 축제': ['문화', '여행'], '가족·키즈': ['교육'], 반려동물: ['반려동물'],
+};
 const formatClues = {
   토론회: /토론회|포럼|심포지엄/, 강연: /강연|특강|강의/, 세미나: /세미나|컨퍼런스|학회/,
   전시: /전시|개인전|기획전/, 공연: /공연|콘서트|연극|뮤지컬/, 해커톤: /해커톤/,
@@ -68,10 +79,8 @@ export function classifyEvent(event) {
   // '공연'·'예술' 같은 일반 단어는 공식 출처나 AI가 정한 분야를 덮어쓰지 않는다. 구체적인 핵심어만 우선한다.
   const titleDomains = titleCategories.find(([pattern]) => pattern.test(title))?.[2] || [];
   const inferred = domains.filter((domain) => domain !== '기타' && clues[domain]?.test(text));
-  // Legacy categories may describe the event's form, so use them only if content gives no clue.
-  if (!inferred.length && ['교육', '음악', '미술', '디자인'].includes(event.category)) inferred.push(event.category);
-  if (!inferred.length && /미술 전시|사진 전시/.test(event.category || '')) inferred.push('미술', '문화');
-  if (!inferred.length && ['공연', '뮤지컬', '연극', '무용'].includes(event.category)) inferred.push('공연', '문화');
+  // 내용에 단서가 없으면 행사 종류로 분야를 정한다. 예: 제목이 '전주 비빔밥 축제'뿐이어도 푸드 페스티벌이면 음식.
+  if (!inferred.length) inferred.push(...(categoryDomains[event.category] || []));
   const explicit = Array.isArray(event.domains) ? event.domains.filter((value) => domains.includes(value) && value !== '기타') : [];
   // 제목의 구체적인 단어를 AI 태그보다 우선한다. 예: 커피 페스티벌은 부대 공연이 있어도 음식 행사다.
   const selectedDomains = [...new Set(titleDomains.length ? titleDomains : (explicit.length ? explicit : inferred))];

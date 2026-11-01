@@ -151,7 +151,7 @@ test('each recommendation carries its tab section and browsing never shows priva
     context: { school: 'A', regionLatitude: 37.55, regionLongitude: 126.98 }, userId: 'viewer',
   });
   assert.deepEqual(results.map((event) => [event.id, event.section]),
-    [['ai', 'interest'], ['near', 'nearby'], ['close-music', 'explore'], ['far-art', 'explore']]);
+    [['close-music', 'local'], ['ai', 'interest'], ['near', 'nearby'], ['far-art', 'explore']]);
 });
 
 test('shares near the device come first and the same age band breaks ties, whatever the interests', () => {
@@ -217,4 +217,11 @@ test('this week fits free calendar time and events next to a saved plan get thei
   assert.deepEqual(noBusy.filter((item) => item.section === 'sameDay').map((item) => item.id), ['near-plan']);
   assert.match(noBusy[0].reason, /덕수궁 산책 일정 근처 약 \d+m/);
   assert.equal(noBusy.filter((item) => item.section === 'fits').length, 0, '캘린더를 모르면 빈 시간 묶음이 없다');
+});
+
+test('an event with a plain title still matches the topic of its type', () => {
+  const at = { startsAt: '2099-02-01T05:00:00Z', endsAt: '2099-02-01T07:00:00Z' };
+  const results = rankRecommendations({ catalog: [{ ...at, id: 'bibimbap', title: '전주 비빔밥 축제', category: '푸드 페스티벌' }],
+    saved: [], interests: new Map(), excluded: new Set(), favorites: ['음식'], currentTime: Date.parse('2099-01-01T00:00:00Z') });
+  assert.deepEqual(results.map((event) => [event.id, event.section]), [['bibimbap', 'interest']]);
 });

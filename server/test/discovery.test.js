@@ -42,7 +42,7 @@ test('broad saved category matches verified finer exhibition category', () => {
 test('discovery rotates through the top interests instead of only the strongest one', () => {
   const topics = discoveryTopics(new Map([['domain:AI', 5], ['domain:음악', 4], ['domain:소프트웨어', 3], ['domain:교육', 1]]));
   assert.deepEqual(topics, [{ topic: '기술', subject: 'AI·소프트웨어' }, { topic: '음악', subject: '음악' }]);
-  assert.deepEqual(discoveryTopics(new Map([['domain:문화', 2]])).map((item) => item.topic), ['전시', '공연']);
+  assert.deepEqual(discoveryTopics(new Map([['domain:문화', 2]])).map((item) => item.topic), ['전시', '공연', '지역 축제']);
   assert.deepEqual(discoveryTopics(new Map([['domain:기타', 9], ['domain:미술', -1]])), []);
 });
 
