@@ -41,6 +41,9 @@ class CueTravelEstimator {
       );
     } on PlatformException {
       return null;
+    } on MissingPluginException {
+      // Android에는 아직 경로 계산 채널이 없다. 이동 시간을 모르는 것으로 보고 저장은 계속한다.
+      return null;
     }
   }
 
@@ -57,6 +60,8 @@ class CueTravelEstimator {
         longitude: (result['longitude'] as num).toDouble(),
       );
     } on PlatformException {
+      return null;
+    } on MissingPluginException {
       return null;
     }
   }
