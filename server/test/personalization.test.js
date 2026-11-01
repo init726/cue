@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { interestSignals, memoryFromSignal, rankRecommendations } from '../src/personalization.js';
+import { interestSignals, memoryFromSignal, rankingSignals, rankingWeights, rankRecommendations } from '../src/personalization.js';
 
 test('explicit feedback outweighs views and old signals fade', () => {
   const currentTime = Date.parse('2027-01-01T00:00:00Z');
@@ -84,4 +84,54 @@ test('related technology is recommended but unrelated art is excluded', () => {
     ], saved: [], interests: new Map([['domain:AI', 4]]), excluded: new Set(), currentTime,
   });
   assert.deepEqual(results.map((event) => event.id), ['science']);
+});
+
+test('signals are normalized and combined with one weight table', () => {
+  const currentTime = Date.parse('2027-01-01T00:00:00Z');
+  const signals = rankingSignals(
+    { startsAt: '2026-12-01T00:00:00Z', endsAt: '2027-01-04T12:00:00Z' },
+    { interestRaw: 16, peerCount: 8, community: { school: false, region: false, age: true }, distance: 6, currentTime },
+  );
+  assert.ok(signals.interest > 0.8 && signals.interest < 1);
+  assert.equal(signals.peer, 1);
+  assert.equal(signals.proximity, 0.8);
+  assert.equal(signals.affinity, 0.4);
+  assert.equal(signals.urgency, 0.5, '기간형 행사가 3.5일 뒤 끝난다');
+  assert.equal(Object.values(rankingWeights).reduce((sum, value) => sum + value, 0), 1);
+});
+
+test('one topic cannot fill the top of the list and unrelated shares only take discovery slots', () => {
+  const currentTime = Date.parse('2027-01-01T00:00:00Z');
+  const at = (day) => ({ startsAt: `2027-02-0${day}T10:00:00Z`, endsAt: `2027-02-0${day}T12:00:00Z` });
+  const shared = (id, owner, day) => ({ ...at(day), id, title: `동네 공연 ${id}`, domains: ['공연'], originKind: 'shared',
+    sharingUserId: owner, community: { school: 'A' } });
+  const results = rankRecommendations({
+    catalog: [
+      { ...at(1), id: 'ai1', title: 'AI 세미나 1', domains: ['AI'] },
+      { ...at(2), id: 'ai2', title: 'AI 세미나 2', domains: ['AI'] },
+      { ...at(3), id: 'ai3', title: 'AI 세미나 3', domains: ['AI'] },
+      { ...at(4), id: 'robot', title: '로봇 데모데이', domains: ['로봇'] },
+      shared('s1', 'p1', 5), shared('s2', 'p2', 6), shared('s3', 'p3', 7),
+    ],
+    saved: [], interests: new Map([['domain:AI', 4]]), excluded: new Set(), currentTime,
+    context: { school: 'A' }, userId: 'viewer',
+  });
+  assert.deepEqual(results.map((event) => event.id), ['ai1', 'ai2', 'robot', 'ai3', 's1', 's2']);
+  assert.ok(results.every((event) => !Object.hasOwn(event, 'discovery')));
+});
+
+test('activity regions compare by distance, not by how the name is written', () => {
+  const event = (id, latitude) => ({ id, title: `행사 ${id}`, startsAt: '2099-01-01T01:00:00Z', endsAt: '2099-01-01T02:00:00Z',
+    originKind: 'shared', sharingUserId: 'other', community: { region: '서울' }, locationLatitude: latitude, locationLongitude: 126.98 });
+  const results = rankRecommendations({
+    catalog: [event('near', 37.57), event('far', 35.1)], saved: [], interests: new Map(), excluded: new Set(),
+    userId: 'viewer', context: { region: '서울시', regionLatitude: 37.56, regionLongitude: 126.98 },
+  });
+  assert.deepEqual(results.map((row) => row.id), ['near']);
+  assert.match(results[0].reason, /km/);
+  const noCoordinates = rankRecommendations({
+    catalog: [{ ...event('text', null), locationLongitude: null }], saved: [], interests: new Map(), excluded: new Set(),
+    userId: 'viewer', context: { region: '서울' },
+  });
+  assert.match(noCoordinates[0].reason, /같은 활동 지역/);
 });

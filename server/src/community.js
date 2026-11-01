@@ -22,14 +22,17 @@ export function distanceKm(a, b) {
 
 export function communityMatch(event, context = {}) {
   const same = (key) => Boolean(context[key] && event.community?.[key] === context[key]);
-  const school = same('school'), region = same('region'), age = same('ageBand');
+  const school = same('school'), age = same('ageBand');
   const distance = distanceKm(
     { latitude: context.regionLatitude, longitude: context.regionLongitude },
     { latitude: event.locationLatitude, longitude: event.locationLongitude },
   );
+  // 좌표가 있으면 거리로만 판단한다. "서울"과 "서울시"처럼 표기가 달라도 같은 곳으로 본다.
+  // 지역 이름이 같은지는 어느 한쪽에 좌표가 없을 때만 쓴다.
+  const region = distance == null && same('region');
   const nearby = distance != null && distance <= 30;
   const proximityScore = distance == null ? 0 : distance <= 5 ? 7 : distance <= 15 ? 5 : distance <= 30 ? 2 : 0;
-  return { score: (school ? 8 : 0) + (region ? 5 : 0) + (age ? 2 : 0) + proximityScore,
+  return { school, region, age, score: (school ? 8 : 0) + (region ? 5 : 0) + (age ? 2 : 0) + proximityScore,
     reason: school ? '같은 학교에서 공유된 행사예요.'
       : nearby && age ? `내 활동 지역에서 약 ${Math.max(1, Math.round(distance))}km · 같은 연령대가 공유했어요.`
       : nearby ? `내 활동 지역에서 약 ${Math.max(1, Math.round(distance))}km 떨어진 행사예요.`

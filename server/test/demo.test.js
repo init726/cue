@@ -21,7 +21,7 @@ test('explore mode recommends upcoming events even without interests', () => {
   const results = rankRecommendations({ ...args, explore: true });
   assert.ok(results.length >= 6);
   const withInterest = rankRecommendations({ ...args, interests: new Map([['domain:AI', 4]]), explore: true });
-  assert.ok(withInterest[0].domains.includes('AI') && withInterest[0].score > 1);
+  assert.ok(withInterest[0].domains.includes('AI') && withInterest[0].reason.includes('주제'));
 });
 
 test('demo mode seeds the catalog so a brand-new user gets recommendations', async () => {

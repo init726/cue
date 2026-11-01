@@ -1,5 +1,5 @@
 import { classifyEvent } from './classification.js';
-import { communityMatch } from './community.js';
+import { communityMatch, distanceKm } from './community.js';
 
 export const personalizationRules = Object.freeze({
   decayDays: 90,
@@ -64,10 +64,50 @@ const varietyJitter = 0.4;
 const seenPenalty = 0.4;
 const peerEventKey = (event) => `${String(event.title || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')}|${String(event.startsAt || '').slice(0, 10)}`;
 
+// 추천 점수는 신호마다 0~1로 맞춘 뒤 아래 가중치로 더한다. 가중치를 바꿀 때는 이 표만 고친다.
+export const rankingWeights = Object.freeze({ interest: 0.5, peer: 0.15, proximity: 0.15, affinity: 0.1, urgency: 0.1 });
+const listSize = 12;
+// 관심 주제와 맞지 않지만 가까운 사람들이 공유한 행사는 새 관심사를 찾도록 이 개수까지만 섞는다.
+const discoverySlots = 2;
+// 한 분야가 목록 위쪽을 독차지하지 않게 분야마다 이 개수까지만 먼저 보여준다.
+const perTopicCap = 2;
+const nearbyKm = 30;
+const day = 86400000;
+const saturate = (value, scale) => value > 0 ? 1 - Math.exp(-value / scale) : 0;
+
+export function rankingSignals(event, { interestRaw, peerCount, community, distance, currentTime }) {
+  const closesAt = Math.min(Date.parse(event.applicationDeadline) || Infinity,
+    Date.parse(event.endsAt) - Date.parse(event.startsAt) > day ? Date.parse(event.endsAt) : Infinity);
+  const daysLeft = (closesAt - currentTime) / day;
+  return {
+    interest: saturate(interestRaw, 8),
+    peer: peerCount >= 2 ? Math.min(1, Math.log2(peerCount) / 3) : 0,
+    proximity: distance == null ? 0 : Math.max(0, 1 - distance / nearbyKm),
+    affinity: community.school ? 1 : community.region ? 0.5 : community.age ? 0.4 : 0,
+    // 신청 마감이나 기간형 행사 종료가 7일 안으로 다가오면 조금 올린다.
+    urgency: Number.isFinite(daysLeft) && daysLeft <= 7 ? Math.max(0, 1 - daysLeft / 7) : 0,
+  };
+}
+
+const weighted = (signals) => Object.entries(rankingWeights)
+  .reduce((sum, [key, weight]) => sum + weight * signals[key], 0);
+
+function spreadTopics(events) {
+  const counts = new Map(), head = [], tail = [];
+  for (const event of events) {
+    const topic = event.domains?.find((domain) => domain !== '기타') || event.category || '기타';
+    const count = counts.get(topic) || 0;
+    (count < perTopicCap ? head : tail).push(event);
+    counts.set(topic, count + 1);
+  }
+  return [...head, ...tail];
+}
+
 export function rankRecommendations({ catalog, saved, interests, excluded, currentTime = Date.now(), explore = false, seed = null, seen = new Set(), context = {}, userId = null }) {
   // Old profile keys can still be read until the store recomputes them.
   const positiveDomains = [...interests.entries()].filter(([key, score]) => key.startsWith('domain:') && score > 0);
   const specificInterests = positiveDomains.filter(([key]) => !['domain:문화', 'domain:기타'].includes(key));
+  const home = { latitude: context.regionLatitude, longitude: context.regionLongitude };
   const peerGroups = new Map();
   for (const event of catalog) {
     if (event.originKind !== 'shared' || event.sharingUserId === userId || communityMatch(event, context).score <= 0) continue;
@@ -85,7 +125,6 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
       const classification = classifyEvent(event);
       const community = event.originKind === 'shared' ? communityMatch(event, context) : { score: 0, reason: '' };
       const peerCount = peerGroups.get(peerEventKey(event))?.size || 0;
-      const peerScore = peerCount >= 2 ? Math.min(6, Math.log2(peerCount + 1) * 2) : 0;
       const matchedDomains = classification.domains.filter((domain) => (interests.get(`domain:${domain}`) || 0) > 0 && domain !== '기타');
       const domainScore = matchedDomains.reduce((sum, domain) => sum + interests.get(`domain:${domain}`), 0);
       const relatedScore = [...interests.entries()].filter(([key, value]) => key.startsWith('domain:') && value > 0 &&
@@ -96,10 +135,15 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
       const eligible = positiveDomains.length > 0 && (matchedDomains.length > 0 || relatedScore > 0) &&
         (!specificInterests.length || matchedDomains.some((domain) => domain !== '문화') || relatedScore > 0);
       const formatScore = Math.max(0, interests.get(`format:${classification.format}`) || 0);
-      const score = (eligible ? domainScore * 4 + relatedScore * 0.6 + tagScore * 1.5 + formatScore * 0.2 : 0) + community.score + peerScore;
+      const interestRaw = eligible ? domainScore * 4 + relatedScore * 0.6 + tagScore * 1.5 + formatScore * 0.2 : 0;
+      const distance = distanceKm(home, { latitude: event.locationLatitude, longitude: event.locationLongitude });
+      const signals = rankingSignals(event, { interestRaw, peerCount, community, distance, currentTime });
+      // 관심 주제와 맞지 않는 행사는 가까운 사람들이 공유한 경우에만 탐색 후보가 된다.
+      const discovery = !signals.interest && community.score > 0;
+      const score = signals.interest || discovery ? weighted(signals) : 0;
       const reason = peerCount >= 2 ? `비슷한 환경의 사용자 ${peerCount}명이 공유한 행사예요.` : community.reason || (matchedDomains.length ? `${matchedDomains.slice(0, 2).join('·')} 주제에 보인 관심을 바탕으로 추천해요.` :
         relatedScore > 0 ? '관심 주제와 가까운 분야의 행사예요.' : '');
-      return { ...event, ...classification, score, reason, ...(peerCount >= 2 ? { peerCount } : {}) };
+      return { ...event, ...classification, score, reason, discovery, ...(peerCount >= 2 ? { peerCount } : {}) };
     })
     .sort((a, b) => b.score - a.score || Date.parse(a.startsAt) - Date.parse(b.startsAt));
   // seed가 있으면 점수를 조금 흔들고 방금 본 행사는 뒤로 미뤄 새로고침마다 다른 행사가 섞여 나오게 한다.
@@ -116,11 +160,14 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
       return true;
     });
   };
-  const matched = unique(byVariety(ranked.filter((event) => event.score > 0)));
-  if (!explore || matched.length >= exploreMinimum) return matched.slice(0, 12);
+  const strip = ({ discovery, ...event }) => event;
+  const relevant = spreadTopics(unique(byVariety(ranked.filter((event) => event.score > 0 && !event.discovery))));
+  const discovered = unique(byVariety(ranked.filter((event) => event.score > 0 && event.discovery))).slice(0, discoverySlots);
+  const matched = [...relevant.slice(0, listSize - discovered.length), ...discovered].map(strip);
+  if (!explore || matched.length >= exploreMinimum) return matched;
   const reason = positiveDomains.length ? '새로운 관심사를 발견할 수 있는 행사예요.' : '지금 인기 있는 행사예요. 저장하면 취향에 맞춰 추천해요.';
   const filler = unique(byVariety(ranked.filter((event) => event.score <= 0).map((event) => ({ ...event, score: 1, reason }))))
-    .map((event) => ({ ...event, score: 0.01 }));
+    .map((event) => strip({ ...event, score: 0.01 }));
   return [...matched, ...filler].slice(0, Math.max(exploreSize, matched.length));
 }
 
