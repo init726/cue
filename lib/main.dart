@@ -275,6 +275,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   String communityAgeBand = '';
   String? recommendationError;
   List<String> interestLabels = [];
+  // 직접 고른 관심 분야. 기록이 없어도 첫날부터 맞춤 추천에 쓴다.
+  Set<String> favoriteTopics = {};
   bool sharingEvent = false;
   bool preventDuplicateEvents = true;
   bool checkScheduleConflicts = true;
@@ -427,6 +429,9 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         communitySchool = profile['school'] as String? ?? '';
         communityRegion = profile['region'] as String? ?? '';
         regionLatitude = (profile['regionLatitude'] as num?)?.toDouble();
+        if (profile['favoriteTopics'] is List) {
+          favoriteTopics = (profile['favoriteTopics'] as List).whereType<String>().toSet();
+        }
         regionLongitude = (profile['regionLongitude'] as num?)?.toDouble();
         communityAgeBand = profile['ageBand'] as String? ?? '';
         userId = me['userId'] as String?;
@@ -480,8 +485,25 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     }
   }
 
+  // 앞으로 7일의 바쁜 시간(제목 없이 시작/끝만). 캘린더 권한이 이미 있을 때만 읽고 권한을 묻지 않는다.
+  Future<String?> _busyQuery() async {
+    try {
+      if ((await calendarPlugin.hasPermissions()).data != true) return null;
+      final list = await calendarPlugin.retrieveCalendars();
+      final calendars = list.data?.where((item) => item.id != null).toList() ?? [];
+      final now = DateTime.now();
+      final rows = await _readSchedules(calendars, now, now.add(Duration(days: 7)));
+      return rows.take(80).map((row) =>
+          '${row.item.start.toUtc().toIso8601String()}/${row.item.end.toUtc().toIso8601String()}').join(',');
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _loadRecommendations(String route) async {
     try {
+      final busy = await _busyQuery();
+      if (busy != null) route += '${route.contains('?') ? '&' : '?'}busy=${Uri.encodeQueryComponent(busy)}';
       final recs = await api.get(route);
       if (!mounted) return;
       setState(() {
@@ -1936,6 +1958,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     await prefs.setBool('cue_onboarding_recommendations', personalizationEnabled && recommendationEnabled);
     await prefs.setString('cue_onboarding_region', communityRegion);
     await prefs.setString('cue_onboarding_age_band', communityAgeBand);
+    await prefs.setStringList('cue_onboarding_topics', favoriteTopics.toList());
     await prefs.setBool('cue_onboarding_synced', false);
     if (!mounted) return;
     setState(() => onboardingCompleted = true);
@@ -1949,6 +1972,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     final enabled = prefs.getBool('cue_onboarding_recommendations') ?? true;
     final region = prefs.getString('cue_onboarding_region') ?? '';
     final ageBand = prefs.getString('cue_onboarding_age_band') ?? '';
+    final topics = prefs.getStringList('cue_onboarding_topics') ?? const <String>[];
     final point = await travelEstimator.geocode(region);
     await api.patch('/v1/profile', {
       'onboardingCompleted': true,
@@ -1956,11 +1980,56 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       'recommendationEnabled': enabled,
       'region': region,
       'ageBand': ageBand,
+      if (topics.isNotEmpty) 'favoriteTopics': topics,
       if (point != null) 'regionLatitude': point.latitude,
       if (point != null) 'regionLongitude': point.longitude,
     });
     await prefs.setBool('cue_onboarding_synced', true);
     onboardingPreferencesDirty = false;
+  }
+
+  Widget _topicChips(Set<String> selected, ValueChanged<Set<String>> onChanged) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: [
+      for (final topic in cueTopics)
+        FilterChip(
+          label: Text(topic),
+          selected: selected.contains(topic),
+          showCheckmark: false,
+          onSelected: (on) {
+            final next = {...selected};
+            if (on && next.length < 10) next.add(topic);
+            if (!on) next.remove(topic);
+            onChanged(next);
+          },
+        ),
+    ],
+  );
+
+  // 추천 탭·설정에서 관심 분야를 고친다. 저장하면 바로 추천을 다시 불러온다.
+  Future<void> _editTopics() async {
+    var draft = {...favoriteTopics};
+    final result = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(builder: (context, setSheet) => SafeArea(child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('관심 있는 분야', style: TextStyle(color: ink, fontSize: 20, fontWeight: FontWeight.w800)),
+          SizedBox(height: 4),
+          Text('최대 10개까지 고를 수 있어요. 저장한 행사에서 배운 관심사와 함께 써요.', style: TextStyle(color: muted, fontSize: 13)),
+          SizedBox(height: 14),
+          _topicChips(draft, (topics) => setSheet(() => draft = topics)),
+          SizedBox(height: 18),
+          _button('저장', Icons.check, () => Navigator.pop(sheetContext, draft)),
+        ]),
+      ))),
+    );
+    if (result == null || !mounted) return;
+    setState(() => favoriteTopics = result);
+    await _updateProfile({'favoriteTopics': result.toList()});
   }
 
   Widget _onboardingStep(String number, String title, String detail) =>
@@ -2012,6 +2081,14 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           recommendationEnabled = value;
         }),
       )),
+      SizedBox(height: 14),
+      _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _eyebrow('관심 있는 분야'),
+        SizedBox(height: 4),
+        Text('3개 이상 고르면 첫날부터 맞는 행사를 추천해요.', style: TextStyle(color: muted, fontSize: 13)),
+        SizedBox(height: 12),
+        _topicChips(favoriteTopics, (topics) => setState(() => favoriteTopics = topics)),
+      ])),
       SizedBox(height: 14),
       _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _eyebrow('선택 · 추천 환경'),
@@ -3049,6 +3126,8 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
 
   // 추천 탭은 서버가 붙인 묶음(section) 순서로 보여준다. 예전 서버는 묶음이 없으므로 맞춤 추천으로 본다.
   static const _recommendationSections = [
+    ('fits', '이번 주 비어 있는 시간에', '내 캘린더가 비어 있는 시간에 열리는 행사예요.'),
+    ('sameDay', '저장한 일정 근처', '같은 날 가까운 곳에서 열려 함께 들르기 좋아요.'),
     ('nearby', '내 주변에서 공유된 행사', '가까운 곳·같은 연령대 사람들이 직접 찾아 공유했어요.'),
     ('interest', '취향에 맞는 행사', '저장하고 관심 표시한 분야를 바탕으로 골랐어요.'),
     ('explore', '이런 행사는 어때요?', '관심 분야 밖이지만 가깝고 곧 열리는 행사예요.'),
@@ -3088,9 +3167,13 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: _pageTitle('추천 행사', interestLabels.isEmpty
-              ? '저장한 행사로 취향을 배워요'
-              : '${interestLabels.join('·')}에 관심이 많아요')),
+          Expanded(child: GestureDetector(
+            onTap: _editTopics,
+            // 직접 고른 분야를 먼저, 저장 기록에서 배운 분야를 뒤에 보여준다.
+            child: _pageTitle('추천 행사', interestLabels.isEmpty && favoriteTopics.isEmpty
+                ? '저장한 행사로 취향을 배워요'
+                : '${{...favoriteTopics, ...interestLabels}.take(3).join('·')}에 관심이 많아요'),
+          )),
           IconButton.filledTonal(
             onPressed: recommendationLoading ? null : () => _refresh(shuffle: true),
             icon: Icon(Icons.refresh_rounded),
@@ -3099,6 +3182,16 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         ]),
         SizedBox(height: 12),
         _locationBar(),
+        if (favoriteTopics.isEmpty && interestLabels.isEmpty) ...[
+          SizedBox(height: 10),
+          _card(Row(children: [
+            Icon(Icons.interests_outlined, color: accent),
+            SizedBox(width: 12),
+            Expanded(child: Text('관심 분야를 고르면 바로 맞춤 추천을 받을 수 있어요.',
+                style: TextStyle(color: ink, height: 1.45))),
+            TextButton(onPressed: _editTopics, child: Text('고르기')),
+          ])),
+        ],
         SizedBox(height: 16),
         if (recommendationLoading && recommended.isEmpty)
           _empty(Icons.search, '행사를 찾고 있어요', '새 행사를 찾을 때는 1분 정도 걸릴 수 있어요.')
@@ -3462,6 +3555,15 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     '추천' => [
       _card(ListTile(
         contentPadding: EdgeInsets.zero,
+        leading: Icon(Icons.interests_outlined, color: accent),
+        title: Text('관심 있는 분야'),
+        subtitle: Text(favoriteTopics.isEmpty ? '고르지 않음 · 저장한 행사로만 배워요' : favoriteTopics.join(' · ')),
+        trailing: Icon(Icons.chevron_right, color: muted),
+        onTap: _editTopics,
+      )),
+      SizedBox(height: 14),
+      _card(ListTile(
+        contentPadding: EdgeInsets.zero,
         leading: Icon(Icons.people_outline, color: accent),
         title: Text('내 추천 환경 (실험)'),
         subtitle: Text([communitySchool, communityRegion, _ageBandLabel(communityAgeBand)]
@@ -3644,12 +3746,23 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _openMap(Map<String, dynamic> event, {bool directions = false}) =>
-      _openInMap(_mapTarget(event), directions: directions);
+  Future<void> _openMap(Map<String, dynamic> event, {bool directions = false}) {
+    _noteOpened(event, directions ? 'directions' : 'map');
+    return _openInMap(_mapTarget(event), directions: directions);
+  }
+
+  // 추천받은 행사의 지도·길찾기·원 안내를 열면 약한 관심으로 기록한다. 실패해도 조용히 넘어간다.
+  void _noteOpened(Map<String, dynamic> event, String kind) {
+    final id = event['id'];
+    if (id == null || !recommended.any((item) => item['id'] == id)) return;
+    unawaited(api.post('/v1/interactions', {'eventId': id, 'action': 'recommendation_opened', 'kind': kind})
+        .then((_) {}, onError: (_) {}));
+  }
 
   // 위치를 아는 일정은 앱 안 지도(iOS)로 보여준다. 지도를 띄울 수 없으면 지도 앱으로 연다.
   Future<void> _showOnMap(List<Map<String, dynamic>> events,
       {required String title, bool route = false, int initial = 0, bool directions = false}) async {
+    if (events.isNotEmpty) _noteOpened(events[initial.clamp(0, events.length - 1)], directions ? 'directions' : 'map');
     final stops = events.map(CueMapStop.from).whereType<CueMapStop>().toList();
     if (!CueMapView.supported || stops.isEmpty) {
       if (events.isNotEmpty) await _openMap(events[initial.clamp(0, events.length - 1)], directions: directions);
@@ -3843,6 +3956,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                     if (value == 'dismiss') {
                       await _dismissRecommendation(event);
                     } else if (value == 'source' && sourceUrl != null) {
+                      _noteOpened(event, 'source');
                       final url = Uri.tryParse(sourceUrl);
                       if (url == null || !await launchUrl(url, mode: LaunchMode.externalApplication)) {
                         _message('원 안내 페이지를 열 수 없어요.');
@@ -4103,7 +4217,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       context: context,
       builder: (context) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
         ListTile(title: Text('관심 없는 이유 (선택사항)')),
-        for (final choice in ['관심 없는 분야', '시간 안 맞음', '장소가 멂', '참가 조건 안 맞음', '이미 알고 있는 행사'])
+        for (final choice in ['관심 없는 분야', '시간 안 맞음', '장소가 멂', '비쌈', '참가 조건 안 맞음', '이미 알고 있는 행사'])
           ListTile(title: Text(choice), onTap: () => Navigator.pop(context, choice)),
         TextButton(onPressed: () => Navigator.pop(context, ''), child: Text('이유 없이 관심 없음')),
       ])),

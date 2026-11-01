@@ -1,4 +1,4 @@
-import { communityContext, eventOrigin, placeFromRow } from './community.js';
+import { communityContext, eventOrigin, placeFromRow, cleanTopics } from './community.js';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -73,6 +73,9 @@ for (const [column, type] of [['location_latitude', 'REAL'], ['location_longitud
 }
 for (const [column, type] of [['origin_kind', "TEXT NOT NULL DEFAULT 'legacy'"], ['sharing_user_id', 'TEXT REFERENCES users(id) ON DELETE CASCADE'], ['share_source_event_id', 'TEXT REFERENCES events(id) ON DELETE CASCADE'], ['community_school', "TEXT NOT NULL DEFAULT ''"], ['community_region', "TEXT NOT NULL DEFAULT ''"], ['community_age_band', "TEXT NOT NULL DEFAULT ''"]]) {
   if (!db.prepare('PRAGMA table_info(events)').all().some((row) => row.name === column)) db.exec(`ALTER TABLE events ADD COLUMN ${column} ${type}`);
+}
+if (!db.prepare('PRAGMA table_info(profiles)').all().some((row) => row.name === 'favorite_topics')) {
+  db.exec("ALTER TABLE profiles ADD COLUMN favorite_topics TEXT NOT NULL DEFAULT '[]'");
 }
 for (const column of ['place_provider', 'place_id', 'place_category']) {
   if (!db.prepare('PRAGMA table_info(events)').all().some((row) => row.name === column)) db.exec(`ALTER TABLE events ADD COLUMN ${column} TEXT`);
@@ -176,6 +179,7 @@ export const store = {
     const row = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId);
     return row && { school: row.school, region: row.region, ageBand: row.age_band,
       regionLatitude: row.region_latitude, regionLongitude: row.region_longitude,
+      favoriteTopics: JSON.parse(row.favorite_topics || '[]'),
       userId: row.user_id, onboardingCompleted: bool(row.onboarding_completed),
       personalizationEnabled: bool(row.personalization_enabled), recommendationEnabled: bool(row.recommendation_enabled),
       locale: row.locale, timezone: row.timezone, createdAt: row.created_at, updatedAt: row.updated_at };
@@ -193,6 +197,9 @@ export const store = {
     if (!personalization) db.prepare('DELETE FROM interest_profiles WHERE user_id=?').run(userId);
     if (!personalization) db.prepare('DELETE FROM agent_memories WHERE user_id=?').run(userId);
     if (personalization && !old.personalizationEnabled) this.recomputeInterests(userId);
+    if (Object.hasOwn(changes, 'favoriteTopics')) {
+      db.prepare('UPDATE profiles SET favorite_topics=? WHERE user_id=?').run(JSON.stringify(cleanTopics(changes.favoriteTopics)), userId);
+    }
     if (['school', 'region', 'ageBand', 'regionLatitude', 'regionLongitude'].some((key) => Object.hasOwn(changes, key))) {
       const context = communityContext({ ...old, ...changes });
       db.prepare('UPDATE profiles SET school=?,region=?,age_band=?,region_latitude=?,region_longitude=? WHERE user_id=?')
@@ -294,7 +301,7 @@ export const store = {
     return true;
   },
   recomputeInterests(userId) {
-    const rows = db.prepare(`SELECT i.action,i.created_at,i.metadata,e.title,e.description,e.category,e.tags,e.format,e.domains FROM event_interactions i JOIN events e ON e.id=i.event_id WHERE i.user_id=?`).all(userId);
+    const rows = db.prepare(`SELECT i.action,i.created_at,i.metadata,e.title,e.description,e.category,e.tags,e.format,e.domains,e.start_at FROM event_interactions i JOIN events e ON e.id=i.event_id WHERE i.user_id=?`).all(userId);
     const scores = interestSignals(rows);
     const activeMemories = new Set();
     db.prepare('DELETE FROM interest_profiles WHERE user_id=?').run(userId);
@@ -326,7 +333,7 @@ export const store = {
   },
   interests(userId) { return db.prepare('SELECT interest_key AS interestKey,score,confidence,evidence_count AS evidenceCount,last_updated_at AS lastUpdatedAt FROM interest_profiles WHERE user_id=? ORDER BY score DESC').all(userId); },
   memories(userId) { return db.prepare('SELECT id,memory_type AS memoryType,content,confidence,evidence_count AS evidenceCount,expires_at AS expiresAt FROM agent_memories WHERE user_id=? AND (expires_at IS NULL OR expires_at>?)').all(userId,now()); },
-  recommendations(userId, { seed = null, seen = new Set() } = {}) {
+  recommendations(userId, { seed = null, seen = new Set(), busy = null } = {}) {
     const profile = this.profile(userId);
     if (!profile?.personalizationEnabled || !profile.recommendationEnabled) return [];
     if (!this.interests(userId).some((item) => item.interestKey.startsWith('domain:')) &&
@@ -334,7 +341,8 @@ export const store = {
       this.recomputeInterests(userId);
     const interests = new Map(this.interests(userId).map((item) => [item.interestKey,item.score]));
     const excluded = new Set(db.prepare("SELECT event_id FROM user_events WHERE user_id=? AND status IN ('saved','planned','completed','dismissed','unsaved')").all(userId).map((item) => item.event_id));
-    const results = rankRecommendations({ catalog: this.catalog(), saved: this.saved(userId), interests, excluded, explore: true, seed, seen, context: profile, userId });
+    const results = rankRecommendations({ catalog: this.catalog(), saved: this.saved(userId), interests, excluded, explore: true, seed, seen,
+      context: profile, userId, favorites: profile.favoriteTopics, busy });
     for (const event of results) {
       db.prepare(`INSERT INTO recommendations(id,user_id,event_id,recommendation_score,reason,created_at) VALUES(?,?,?,?,?,?)
         ON CONFLICT(user_id,event_id) DO UPDATE SET recommendation_score=excluded.recommendation_score,reason=excluded.reason`)

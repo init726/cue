@@ -1,0 +1,32 @@
+# 하루 한 번 서버가 서울시 문화행사 API와 웹 검색으로 추천할 행사를 채우게 한다.
+# 서버는 바로 202로 답하고 뒤에서 채운다. CATALOG_ADMIN_TOKEN 비밀값이 없으면 건너뛴다.
+name: Refresh event catalog
+
+on:
+  schedule:
+    - cron: '40 20 * * *' # 매일 한국 시각 오전 5시 40분
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ask the API to refresh the catalog
+        env:
+          API_URL: ${{ vars.CUE_API_URL || 'https://cue-api-vczh.onrender.com' }}
+          TOKEN: ${{ secrets.CATALOG_ADMIN_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "CATALOG_ADMIN_TOKEN 비밀값이 없어 건너뜁니다."
+            exit 0
+          fi
+          # Render 무료 서버는 잠들어 있으면 처음 응답까지 1분 가까이 걸린다.
+          for attempt in 1 2 3; do
+            if curl --fail --silent --show-error --max-time 90 -X POST \
+                -H "authorization: Bearer $TOKEN" "$API_URL/v1/catalog/refresh"; then
+              exit 0
+            fi
+            sleep 30
+          done
+          exit 1

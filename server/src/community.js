@@ -4,6 +4,13 @@ const coordinate = (value, min, max) => value !== null && value !== '' && value 
   Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max
   ? Math.round(Number(value) * 100) / 100 : null;
 
+import { domains } from './classification.js';
+
+// 사용자가 직접 고른 관심 분야. 알려진 분야만, 최대 10개.
+export function cleanTopics(value) {
+  return [...new Set((Array.isArray(value) ? value : []).filter((topic) => domains.includes(topic) && topic !== '기타'))].slice(0, 10);
+}
+
 export function communityContext(body = {}) {
   return {
     school: text(body.school, 80), region: text(body.region, 80),

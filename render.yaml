@@ -26,3 +26,7 @@ services:
         sync: false
       - key: KAKAO_REST_API_KEY
         sync: false
+      - key: SEOUL_OPEN_API_KEY
+        sync: false
+      - key: CATALOG_ADMIN_TOKEN
+        sync: false

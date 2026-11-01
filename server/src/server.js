@@ -8,10 +8,11 @@ import { CloudStore, importCloudCatalog, pingCloud } from './cloud-store.js';
 import { discoverCatalogEvents, discoveryTopics } from './discovery.js';
 import { formats, domains } from './classification.js';
 import { demoEvents, demoEventCount, isDemoEvent } from './demo-catalog.js';
-import { exploreEnabled } from './personalization.js';
-import { communityContext } from './community.js';
+import { exploreEnabled, withFavorites } from './personalization.js';
+import { cleanTopics, communityContext } from './community.js';
 import { placesEnabled, regionName, searchPlaces } from './places.js';
 import { weatherAt } from './weather.js';
+import { discoverSeoulEvents } from './seoul.js';
 
 const port = Number(process.env.PORT || 8787);
 const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
@@ -27,7 +28,10 @@ const discoveryJobs = new Map();
 const fallbackTopics = ['기술', '음악', '공연', '강연', '워크숍', '스포츠'];
 
 async function discoverFor(data, userId) {
-  const interests = new Map((await data.interests(userId)).map((row) => [row.interestKey, row.score]));
+  // 온보딩에서 고른 관심 분야도 검색 주제로 쓴다.
+  const favorites = data === store ? store.profile(userId)?.favoriteTopics || []
+    : (await data.one('profiles', { user_id: `eq.${userId}` }))?.favorite_topics || [];
+  const interests = withFavorites(new Map((await data.interests(userId)).map((row) => [row.interestKey, row.score])), favorites);
   // 관심 상위 분야를 돌아가며 찾는다. 최근에 찾은 주제는 건너뛰어 새로고침마다 다른 분야가 채워진다.
   // 관심사가 없으면 기본 주제로 찾는다. 찾은 행사는 둘러보기 묶음으로 보여준다.
   const topics = discoveryTopics(interests);
@@ -59,6 +63,44 @@ async function discoverFor(data, userId) {
   job.promise.catch(() => { if (discoveryJobs.get(jobKey) === job) discoveryJobs.delete(jobKey); });
   await job.promise;
   return true;
+}
+
+// 하루 한 번 예약 작업이 부르는 카탈로그 채우기. 서울시 문화행사 API(무료)를 먼저 가져오고,
+// 공식 데이터가 없는 분야만 웹 검색(OpenAI 비용)으로 찾는다. 이미 있는 행사는 원 안내 주소로 건너뛴다.
+const dailyTopics = () => String(process.env.DISCOVERY_DAILY_TOPICS || '기술,강연,채용·커리어,팝업스토어,스포츠,워크숍')
+  .split(',').map((topic) => topic.trim()).filter(Boolean).slice(0, 12);
+let catalogRefresh = null;
+async function importNew(events) {
+  const cloud = Boolean(supabaseUrl && supabaseServiceRoleKey);
+  const existing = new Set(cloud
+    ? (await new CloudStore({ id: null, token: supabaseServiceRoleKey }, { key: supabaseServiceRoleKey })
+      .rows('events', { source_type: 'eq.catalog', end_at: `gt.${new Date().toISOString()}` }).catch(() => []))
+      .map((row) => row.source_url)
+    : store.catalog().map((event) => event.sourceUrl));
+  const fresh = events.filter((event) => event.sourceUrl && !existing.has(event.sourceUrl));
+  for (let index = 0; index < fresh.length; index += 100) {
+    const chunk = fresh.slice(index, index + 100);
+    if (cloud) await importCloudCatalog(chunk);
+    else store.importCatalog(chunk);
+  }
+  return fresh.length;
+}
+export async function refreshCatalog() {
+  const report = { seoul: 0, web: {} };
+  try {
+    report.seoul = await importNew(await discoverSeoulEvents());
+  } catch (error) {
+    report.seoulError = error instanceof Error ? error.message : String(error);
+  }
+  for (const topic of dailyTopics()) {
+    try {
+      report.web[topic] = await importNew((await discoverCatalogEvents(topic)).map((event) => ({ ...event, originKind: 'web' })));
+    } catch (error) {
+      report.web[topic] = error instanceof Error ? error.message : String(error);
+    }
+  }
+  console.log('Catalog refresh:', JSON.stringify(report));
+  return report;
 }
 
 // CUE_DEMO_MODE=1: 시연용 예시 행사를 카탈로그에 채워 두고, 검색 결과가 없어도 추천이 비지 않게 한다.
@@ -151,6 +193,7 @@ async function cloudProfile(user, changes) {
     school: row.school || '', region: row.region || '', ageBand: row.age_band || '',
     regionLatitude: row.region_latitude == null ? null : Number(row.region_latitude),
     regionLongitude: row.region_longitude == null ? null : Number(row.region_longitude),
+    favoriteTopics: Array.isArray(row.favorite_topics) ? row.favorite_topics : [],
     personalizationEnabled: row.personalization_enabled,
     recommendationEnabled: row.recommendation_enabled,
     locale: row.locale, timezone: row.timezone,
@@ -260,6 +303,14 @@ export const server = http.createServer(async (req, res) => {
       return send(res, 201, { userId: id, token });
     }
 
+    if (req.method === 'POST' && route === '/v1/catalog/refresh') {
+      const given = String(req.headers.authorization || '').replace(/^Bearer /, '');
+      const admin = process.env.CATALOG_ADMIN_TOKEN || '';
+      if (!admin || given.length !== admin.length || !timingSafeEqual(Buffer.from(given), Buffer.from(admin))) return send(res, 403, { error: '관리자 인증이 필요해요.' });
+      // 오래 걸리므로 바로 응답하고 뒤에서 채운다. 이미 돌고 있으면 새로 시작하지 않는다.
+      if (!catalogRefresh) catalogRefresh = refreshCatalog().finally(() => { catalogRefresh = null; });
+      return send(res, 202, { started: true });
+    }
     if (req.method === 'POST' && route === '/v1/catalog/import') {
       if (!allowed(`catalog:${ip}`, 30, 60 * 60 * 1000)) return send(res, 429, { error: '요청이 너무 많아요.' });
       const given = String(req.headers.authorization || '').replace(/^Bearer /, '');
@@ -319,6 +370,8 @@ export const server = http.createServer(async (req, res) => {
       changes.age_band = context.ageBand;
       changes.region_latitude = context.regionLatitude;
       changes.region_longitude = context.regionLongitude;
+      // 관심 분야 열은 보냈을 때만 쓴다(마이그레이션 전 서버에서도 다른 설정 저장이 깨지지 않게).
+      if (Object.hasOwn(body, 'favoriteTopics')) changes.favorite_topics = cleanTopics(body.favoriteTopics);
       const profile = await cloudProfile(user, changes);
       await data.onProfileChanged(previous, profile);
       store.updateProfile(user.id, profile);
@@ -355,7 +408,12 @@ export const server = http.createServer(async (req, res) => {
       const rawSeed = query.get('seed');
       const seed = /^\d{1,10}$/.test(rawSeed || '') ? Number(rawSeed) : null;
       const seen = new Set(String(query.get('seen') || '').split(',').filter((id) => /^[0-9a-f-]{36}$/i.test(id)).slice(0, 60));
-      const options = { seed, seen };
+      // busy: 앱이 기기 캘린더에서 읽은 앞으로 2주의 바쁜 시간(제목 없이 시작/끝만). 저장하지 않고 이번 계산에만 쓴다.
+      const busy = query.has('busy') ? String(query.get('busy')).split(',').slice(0, 80).flatMap((pair) => {
+        const [start, end] = pair.split('/').map((value) => Date.parse(value));
+        return Number.isFinite(start) && Number.isFinite(end) && end > start ? [{ start, end }] : [];
+      }) : null;
+      const options = { seed, seen, busy };
       const demo = process.env.CUE_DEMO_MODE === '1';
       if (demo) {
         try { await ensureDemoCatalog(data); } catch (error) {
@@ -405,7 +463,12 @@ export const server = http.createServer(async (req, res) => {
       const action = String(body.action || '');
       if (!['viewed','interested','not_interested','recommendation_opened','recommendation_dismissed','completed'].includes(action))
         return send(res, 400, { error: '지원하지 않는 행동이에요.' });
-      if (!(await data.interact(user.id,String(body.eventId || ''),action, { reason: ['관심 없는 분야','시간 안 맞음','장소가 멂','참가 조건 안 맞음','이미 알고 있는 행사'].includes(body.reason) ? body.reason : null }))) return send(res, 404, { error: '행사를 찾을 수 없어요.' });
+      const metadata = {
+        reason: ['관심 없는 분야','시간 안 맞음','장소가 멂','비쌈','참가 조건 안 맞음','이미 알고 있는 행사'].includes(body.reason) ? body.reason : null,
+        // 추천을 연 방법: 지도, 길찾기, 원 안내 링크. 약한 관심 신호로만 쓴다.
+        ...(['map', 'directions', 'source'].includes(body.kind) ? { kind: body.kind } : {}),
+      };
+      if (!(await data.interact(user.id,String(body.eventId || ''),action, metadata))) return send(res, 404, { error: '행사를 찾을 수 없어요.' });
       return send(res, 201, { recorded: true });
     }
     if (req.method === 'DELETE' && route === '/v1/account') {

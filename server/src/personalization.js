@@ -25,11 +25,39 @@ const relatedDomains = {
   환경: ['정책', '과학', '여행'], 역사: ['문화', '교육'], 반려동물: [],
 };
 
+// 관심 없음 이유 중 분야와 상관없는 것은 pref: 신호로 남긴다. 순위를 매길 때 거리·비용·시간대 감점으로 쓴다.
+const kst = (ms) => new Date(ms + 9 * 3600000);
+export function timeBand(startsAt) {
+  const time = kst(Date.parse(startsAt));
+  if (!Number.isFinite(time.getTime())) return null;
+  const day = time.getUTCDay();
+  if (day === 0 || day === 6) return 'weekend';
+  return time.getUTCHours() >= 18 ? 'weekday_evening' : 'weekday_day';
+}
+const preferenceKeys = (row, reason) => {
+  if (reason === '장소가 멂') return ['pref:far'];
+  if (reason === '비쌈') return ['pref:paid'];
+  if (reason === '시간 안 맞음') {
+    const band = timeBand(row.start_at || row.startsAt);
+    return band ? [`pref:band:${band}`] : [];
+  }
+  return [];
+};
+
 export function interestSignals(interactions, currentTime = Date.now()) {
   const scores = new Map();
   for (const row of interactions) {
     const metadata = parse(row.metadata, {});
     const reason = metadata?.reason;
+    if (row.action === 'not_interested') {
+      const ageDays = Math.max(0, (currentTime - Date.parse(row.created_at)) / 86400000);
+      for (const key of preferenceKeys(row, reason)) {
+        const entry = scores.get(key) || { score: 0, count: 0 };
+        entry.score += Math.exp(-ageDays / personalizationRules.decayDays);
+        entry.count += 1;
+        scores.set(key, entry);
+      }
+    }
     const weight = row.action === 'not_interested' && reason && reason !== '관심 없는 분야'
       ? 0 : (personalizationRules.interestWeights[row.action] ?? 0);
     if (!weight) continue;
@@ -108,7 +136,44 @@ function spreadTopics(events) {
   return [...head, ...tail];
 }
 
-export function rankRecommendations({ catalog, saved, interests, excluded, currentTime = Date.now(), explore = false, seed = null, seen = new Set(), context = {}, userId = null }) {
+const favoriteBoost = 3;
+// 온보딩에서 고른 관심 분야는 기록이 없어도 처음부터 관심사로 친다. 관심 없음으로 깎인 점수보다 직접 고른 것을 따른다.
+export function withFavorites(interests, favorites = []) {
+  const merged = new Map(interests);
+  for (const domain of favorites) {
+    const key = `domain:${domain}`;
+    merged.set(key, Math.max(0, merged.get(key) || 0) + favoriteBoost);
+  }
+  return merged;
+}
+
+const isPaid = (fee) => {
+  const text = String(fee || '');
+  // "0원"은 금액 전체가 0일 때만 무료다("30,000원"의 끝자리 0원은 유료).
+  const free = /무료|free/i.test(text) || /(^|[^\d,])0\s*원/.test(text);
+  return Boolean(text) && !free && /\d|원|유료/.test(text);
+};
+
+// 관심 없음 이유로 배운 감점. 한 번(최근)이면 거리·비용, 같은 시간대는 두 번부터 적용한다.
+export function preferencePenalty(event, interests, distance) {
+  let factor = 1;
+  if ((interests.get('pref:far') || 0) >= 0.8 && distance != null && distance > 10) factor *= 0.6;
+  if ((interests.get('pref:paid') || 0) >= 0.8 && isPaid(event.participationFee)) factor *= 0.7;
+  const band = timeBand(event.startsAt);
+  if (band && (interests.get(`pref:band:${band}`) || 0) >= 1.6) factor *= 0.7;
+  return factor;
+}
+
+const fitWindowMs = 7 * 86400000;
+const busyBufferMs = 30 * 60000;
+const sameDayKm = 2;
+const sectionSlots = 3;
+const weekdayNames = ['일', '월', '화', '수', '목', '금', '토'];
+const kstDate = (ms) => kst(ms).toISOString().slice(0, 10);
+const kstClock = (ms) => kst(ms).toISOString().slice(11, 16);
+
+export function rankRecommendations({ catalog, saved, interests: learned, excluded, currentTime = Date.now(), explore = false, seed = null, seen = new Set(), context = {}, userId = null, favorites = [], busy = null }) {
+  const interests = withFavorites(learned, favorites);
   // Old profile keys can still be read until the store recomputes them.
   const positiveDomains = [...interests.entries()].filter(([key, score]) => key.startsWith('domain:') && score > 0);
   const specificInterests = positiveDomains.filter(([key]) => !['domain:문화', 'domain:기타'].includes(key));
@@ -145,9 +210,10 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
       const signals = rankingSignals(event, { interestRaw, peerCount, community, distance, currentTime });
       // 환경이 맞는 사람이 공유한 행사는 관심사와 상관없이 '내 주변' 후보가 된다.
       const discovery = event.originKind === 'shared' && community.score > 0;
-      const score = discovery
+      const base = discovery
         ? Object.entries(communityWeights).reduce((sum, [key, weight]) => sum + weight * signals[key], 0)
         : signals.interest ? weighted(signals) : 0;
+      const score = base * preferencePenalty(event, interests, distance);
       const reason = peerCount >= 2 ? `비슷한 환경의 사용자 ${peerCount}명이 공유한 행사예요.` : community.reason || (matchedDomains.length ? `${matchedDomains.slice(0, 2).join('·')} 주제에 보인 관심을 바탕으로 추천해요.` :
         relatedScore > 0 ? '관심 주제와 가까운 분야의 행사예요.' : '');
       return { ...event, ...classification, score, reason, discovery, distance, ...(peerCount >= 2 ? { peerCount } : {}) };
@@ -167,26 +233,61 @@ export function rankRecommendations({ catalog, saved, interests, excluded, curre
       return true;
     });
   };
-  // section은 추천 탭의 묶음이다. interest: 관심 주제와 맞음, nearby: 가까운 사람들이 공유, explore: 둘러보기.
+  // section은 추천 탭의 묶음이다. fits: 이번 주 비어 있는 시간, sameDay: 저장한 일정 근처,
+  // nearby: 가까운 사람들이 공유, interest: 관심 주제와 맞음, explore: 둘러보기.
   const strip = ({ discovery, distance, ...event }, section) => ({ ...event, section });
-  const relevant = spreadTopics(unique(byVariety(ranked.filter((event) => event.score > 0 && !event.discovery))));
-  const discovered = unique(byVariety(ranked.filter((event) => event.score > 0 && event.discovery))).slice(0, communitySlots);
+  // 공유 행사는 환경이 맞는 경우(nearby 후보)만 다른 묶음에도 넣을 수 있다.
+  const openToAll = (event) => event.originKind !== 'shared' || event.discovery;
+  const byRelevance = (a, b) => (b.score > 0) - (a.score > 0) || b.score - a.score || Date.parse(a.startsAt) - Date.parse(b.startsAt);
+  const picked = new Set();
+  const take = (events) => events.filter((event) => !picked.has(event.id) && picked.add(event.id));
+
+  // 저장한 일정과 같은 날, 2km 안에서 시간이 겹치지 않는 행사.
+  const anchors = saved.filter((own) => Number.isFinite(own.locationLatitude) && Date.parse(own.endsAt) > currentTime);
+  const sameDay = take(unique(ranked.filter(openToAll).flatMap((event) => {
+    const start = Date.parse(event.startsAt);
+    const anchor = anchors.map((own) => ({ own, km: distanceKm(
+      { latitude: own.locationLatitude, longitude: own.locationLongitude },
+      { latitude: event.locationLatitude, longitude: event.locationLongitude }) }))
+      .filter(({ own, km }) => km != null && km <= sameDayKm && kstDate(Date.parse(own.startsAt)) === kstDate(start))
+      .sort((a, b) => a.km - b.km)[0];
+    if (!anchor) return [];
+    const meters = Math.max(100, Math.round(anchor.km * 10) * 100);
+    return [{ ...event, reason: `${anchor.own.title} 일정 근처 약 ${meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${meters}m`}`, near: anchor.km }];
+  }).sort((a, b) => byRelevance(a, b) || a.near - b.near)).slice(0, sectionSlots))
+    .map(({ near, ...event }) => strip(event, 'sameDay'));
+
+  // 앞으로 7일 안에 시작하고 캘린더의 바쁜 시간과 30분 이상 떨어진 행사. 주말을 먼저 보여준다.
+  const free = (event) => !busy.some((slot) => Date.parse(event.startsAt) < slot.end + busyBufferMs &&
+    Date.parse(event.endsAt) > slot.start - busyBufferMs);
+  const weekend = (event) => [0, 6].includes(kst(Date.parse(event.startsAt)).getUTCDay());
+  const fits = !busy ? [] : take(unique(ranked.filter((event) => openToAll(event) &&
+    Date.parse(event.startsAt) > currentTime + 2 * 3600000 && Date.parse(event.startsAt) <= currentTime + fitWindowMs && free(event))
+    .sort((a, b) => (b.score > 0) - (a.score > 0) || weekend(b) - weekend(a) || byRelevance(a, b))).slice(0, sectionSlots))
+    .map((event) => {
+      const start = Date.parse(event.startsAt);
+      return strip({ ...event, reason: `${weekdayNames[kst(start).getUTCDay()]}요일 ${kstClock(start)}에 캘린더가 비어 있어요.` }, 'fits');
+    });
+  const planned = [...fits, ...sameDay];
+  const rest = ranked.filter((event) => !picked.has(event.id));
+  const relevant = spreadTopics(unique(byVariety(rest.filter((event) => event.score > 0 && !event.discovery))));
+  const discovered = unique(byVariety(rest.filter((event) => event.score > 0 && event.discovery))).slice(0, communitySlots);
   const matched = [...relevant.slice(0, listSize - discovered.length).map((event) => strip(event, 'interest')),
     ...discovered.map((event) => strip(event, 'nearby'))];
-  if (!explore || matched.length >= exploreMinimum) return matched;
+  if (!explore || matched.length >= exploreMinimum) return [...planned, ...matched];
   // 맞는 행사가 적으면 다가오는 행사를 가까운 순서로 채워 탭이 비지 않게 한다.
   // 사용자가 공유한 행사는 같은 학교·지역·연령대에게만 보여야 하므로 둘러보기에 넣지 않는다.
   const reason = positiveDomains.length ? '새로운 관심사를 발견할 수 있는 행사예요.' : '다가오는 행사예요. 저장할수록 취향에 맞춰 추천해요.';
-  const nearFirst = ranked.filter((event) => event.score <= 0 && event.originKind !== 'shared')
+  const nearFirst = rest.filter((event) => event.score <= 0 && event.originKind !== 'shared')
     .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity) || Date.parse(a.startsAt) - Date.parse(b.startsAt));
   // 가까운 순서를 기본 점수로 두고 새로고침 seed로 섞는다.
   const filler = unique(byVariety(nearFirst.map((event, index) => ({ ...event, score: 1 - index / (nearFirst.length + 1) }))))
     .map((event) => strip({ ...event, score: 0.01, reason }, 'explore'));
-  return [...matched, ...filler].slice(0, Math.max(exploreSize, matched.length));
+  return [...planned, ...[...matched, ...filler].slice(0, Math.max(exploreSize, matched.length))];
 }
 
 export function memoryFromSignal(key, value) {
-  if (value.count < 2 || Math.abs(value.score) < 2) return null;
+  if (key.startsWith('pref:') || value.count < 2 || Math.abs(value.score) < 2) return null;
   const positive = value.score > 0;
   const label = key.replace(/^(domain|tag|format):/, '');
   return { memoryType: positive ? 'interest' : 'avoidance',

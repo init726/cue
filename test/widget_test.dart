@@ -15,6 +15,13 @@ void main() {
     expect(find.text('기본 알림'), findsNothing);
     expect(find.text('종료 시간이 없는 일정'), findsNothing);
     expect(find.text('포스터 촬영하기'), findsNothing);
+    // 관심 분야를 고르면 서버에 연결될 때 함께 저장하도록 남겨 둔다.
+    expect(find.text('관심 있는 분야'), findsOneWidget);
+    for (final topic in ['영화', '음악']) {
+      await tester.ensureVisible(find.text(topic));
+      await tester.tap(find.text(topic));
+      await tester.pump();
+    }
     // 테스트 환경에는 서버가 없지만 시작은 막히지 않아야 한다.
     await tester.ensureVisible(find.text('시작하기'));
     await tester.tap(find.text('시작하기'));
@@ -23,6 +30,7 @@ void main() {
     }
     expect(find.text('포스터 촬영하기'), findsOneWidget);
     expect((await SharedPreferences.getInstance()).getBool('cue_onboarding_synced'), isFalse);
+    expect((await SharedPreferences.getInstance()).getStringList('cue_onboarding_topics'), unorderedEquals(['영화', '음악']));
   });
 
   testWidgets('home offers camera, gallery and documents side by side', (tester) async {

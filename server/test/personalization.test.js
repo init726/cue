@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { interestSignals, memoryFromSignal, rankingSignals, rankingWeights, rankRecommendations } from '../src/personalization.js';
+import { interestSignals, memoryFromSignal, preferencePenalty, rankingSignals, rankingWeights, rankRecommendations } from '../src/personalization.js';
 
 test('explicit feedback outweighs views and old signals fade', () => {
   const currentTime = Date.parse('2027-01-01T00:00:00Z');
@@ -167,4 +167,54 @@ test('shares near the device come first and the same age band breaks ties, whate
   assert.deepEqual(results.map((event) => [event.id, event.section]),
     [['near-same-age', 'nearby'], ['near-other-age', 'nearby'], ['far', 'nearby'], ['too-far', 'nearby']]);
   assert.match(results[0].reason, /내 주변 약 1km · 같은 연령대/);
+});
+
+test('chosen topics count as interests from the first day', () => {
+  const at = { startsAt: '2099-02-01T10:00:00Z', endsAt: '2099-02-01T12:00:00Z' };
+  const args = { catalog: [{ ...at, id: 'film', title: '독립영화 상영회', domains: ['영화'] }], saved: [], excluded: new Set(),
+    currentTime: Date.parse('2099-01-01T00:00:00Z') };
+  assert.equal(rankRecommendations({ ...args, interests: new Map() }).length, 0);
+  const results = rankRecommendations({ ...args, interests: new Map([['domain:영화', -2]]), favorites: ['영화'] });
+  assert.deepEqual(results.map((event) => [event.id, event.section]), [['film', 'interest']]);
+});
+
+test('dismissal reasons become distance, price and time-of-day penalties', () => {
+  const now = Date.parse('2027-01-01T00:00:00Z');
+  const signals = interestSignals([
+    { action: 'not_interested', metadata: { reason: '장소가 멂' }, title: 'a', created_at: '2027-01-01T00:00:00Z' },
+    { action: 'not_interested', metadata: { reason: '비쌈' }, title: 'b', created_at: '2027-01-01T00:00:00Z' },
+    { action: 'not_interested', metadata: { reason: '시간 안 맞음' }, title: 'c', start_at: '2027-01-04T11:00:00Z', created_at: '2027-01-01T00:00:00Z' },
+    { action: 'not_interested', metadata: { reason: '시간 안 맞음' }, title: 'd', start_at: '2027-01-05T12:00:00Z', created_at: '2027-01-01T00:00:00Z' },
+  ], now);
+  assert.equal(signals.get('pref:far').count, 1);
+  assert.equal(signals.get('pref:band:weekday_evening').count, 2, '월·화 저녁(한국 시각 20·21시)');
+  assert.equal(memoryFromSignal('pref:band:weekday_evening', { score: 3, count: 2 }), null);
+  const interests = new Map([...signals].map(([key, value]) => [key, value.score]));
+  assert.equal(preferencePenalty({ startsAt: '2027-01-11T11:00:00Z', participationFee: '전석 30,000원' }, interests, 15), 0.6 * 0.7 * 0.7);
+  assert.equal(preferencePenalty({ startsAt: '2027-01-09T05:00:00Z', participationFee: '무료' }, interests, 3), 1);
+  assert.equal(preferencePenalty({ startsAt: '2027-01-09T05:00:00Z', participationFee: '입장료 0원' }, interests, 3), 1);
+});
+
+test('this week fits free calendar time and events next to a saved plan get their own sections', () => {
+  const now = Date.parse('2027-01-04T00:00:00Z'); // 월요일 오전 9시(한국)
+  const at = (day, hour) => new Date(Date.UTC(2027, 0, day, hour - 9)).toISOString();
+  const event = (id, day, hour, extra = {}) => ({ id, title: id, domains: ['음악'], startsAt: at(day, hour), endsAt: at(day, hour + 2),
+    locationLatitude: 37.56, locationLongitude: 126.97, ...extra });
+  const saved = [{ title: '덕수궁 산책', startsAt: at(7, 13), endsAt: at(7, 14), locationLatitude: 37.5658, locationLongitude: 126.9751 }];
+  const results = rankRecommendations({
+    catalog: [event('busy-wed', 6, 19), event('free-sat', 9, 15), event('free-thu', 7, 19, { locationLatitude: 37.6, locationLongitude: 127.2 }),
+      event('near-plan', 7, 16), event('next-month', 30, 15)],
+    saved, interests: new Map([['domain:음악', 4]]), excluded: new Set(), currentTime: now, explore: true,
+    busy: [{ start: Date.parse(at(6, 18)), end: Date.parse(at(6, 21)) }],
+  });
+  const by = (section) => results.filter((item) => item.section === section).map((item) => item.id);
+  assert.deepEqual(by('sameDay'), ['near-plan'], '저장한 일정 근처가 먼저 자리를 잡는다');
+  assert.deepEqual(by('fits'), ['free-sat', 'free-thu'], '주말 먼저');
+  assert.match(results.find((item) => item.id === 'free-sat').reason, /토요일 15:00에 캘린더가 비어 있어요/);
+  assert.ok(!by('fits').includes('busy-wed'), '바쁜 시간과 겹치면 빠진다');
+  const noBusy = rankRecommendations({ catalog: [event('near-plan', 7, 16), event('other', 30, 15)], saved,
+    interests: new Map([['domain:음악', 4]]), excluded: new Set(), currentTime: now });
+  assert.deepEqual(noBusy.filter((item) => item.section === 'sameDay').map((item) => item.id), ['near-plan']);
+  assert.match(noBusy[0].reason, /덕수궁 산책 일정 근처 약 \d+m/);
+  assert.equal(noBusy.filter((item) => item.section === 'fits').length, 0, '캘린더를 모르면 빈 시간 묶음이 없다');
 });

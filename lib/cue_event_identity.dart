@@ -127,7 +127,7 @@ class CueEventIdentity extends StatelessWidget {
               if (participationFee?.trim().isNotEmpty == true) chip(participationFee!.trim()),
               for (final tag in tags
                   .map((tag) => tag.trim().replaceAll('#', ''))
-                  .where((tag) => tag.isNotEmpty && tag != category && tag != '시연용')
+                  .where((tag) => tag.isNotEmpty && tag != category && tag != '시연용' && tag != participationFee?.trim())
                   .toSet()
                   .take(3))
                 chip('#$tag'),

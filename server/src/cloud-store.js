@@ -270,7 +270,7 @@ export class CloudStore {
     await Promise.all([this.insert('interest_profiles', interests, 'user_id,interest_key'),
       this.insert('agent_memories', memories, 'user_id,memory_type,interest_key')]);
   }
-  async recommendations(_userId, { seed = null, seen = new Set() } = {}) {
+  async recommendations(_userId, { seed = null, seen = new Set(), busy = null } = {}) {
     await this.settled();
     // 서로 독립적인 조회는 한꺼번에 보낸다. 카탈로그는 아직 끝나지 않은 행사만 읽는다.
     const [profile, firstInterests, links, catalogRows, saved] = await Promise.all([
@@ -294,7 +294,8 @@ export class CloudStore {
     const results = rankRecommendations({ catalog, saved, interests, excluded, explore: true, seed, seen,
       context: { school: profile.school, region: profile.region, ageBand: profile.age_band,
         regionLatitude: profile.region_latitude == null ? null : Number(profile.region_latitude),
-        regionLongitude: profile.region_longitude == null ? null : Number(profile.region_longitude) }, userId: this.userId });
+        regionLongitude: profile.region_longitude == null ? null : Number(profile.region_longitude) }, userId: this.userId,
+      favorites: Array.isArray(profile.favorite_topics) ? profile.favorite_topics : [], busy });
     // 추천 기록 저장은 응답을 막지 않는다.
     this.insert('recommendations', results.map((event) => ({
       user_id: this.userId, event_id: event.id,

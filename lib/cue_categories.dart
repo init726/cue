@@ -12,3 +12,10 @@ const cueCategoryGroups = <String, List<String>>{
 };
 
 final cueCategories = <String>[for (final values in cueCategoryGroups.values) ...values];
+
+// 서버 classification.js의 분야(domains)와 같다. 온보딩·설정에서 관심 분야로 고른다.
+const cueTopics = <String>[
+  '미술', '음악', '공연', '영화', '책', '역사', '디자인', '패션',
+  '음식', '여행', '스포츠', '건강', '게임', '반려동물', '환경',
+  'AI', '소프트웨어', '과학', '로봇', '교육', '창업', '커리어', '정책', '문화',
+];
