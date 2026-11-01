@@ -8,9 +8,19 @@ const maxDiscoveryAge = 180 * 86400000;
 const officialDomains = {
   // 서울시립미술관은 sema.js가 공식 페이지를 직접 읽으므로 웹 검색에서는 다른 기관만 찾는다.
   전시: ['mmca.go.kr', 'culture.seoul.go.kr'],
-  음악: ['kopis.or.kr', 'sac.or.kr', 'sejongpac.or.kr', 'culture.seoul.go.kr'],
-  공연: ['kopis.or.kr', 'sac.or.kr', 'sejongpac.or.kr', 'culture.seoul.go.kr'],
+  음악: ['kopis.or.kr', 'sac.or.kr', 'sejongpac.or.kr', 'culture.seoul.go.kr', 'tickets.interpark.com', 'ticket.melon.com', 'ticket.yes24.com'],
+  공연: ['kopis.or.kr', 'sac.or.kr', 'sejongpac.or.kr', 'culture.seoul.go.kr', 'tickets.interpark.com', 'ticket.melon.com', 'ticket.yes24.com'],
 };
+// 공식 출처로 제한하지 않는 분야는 실제 행사가 올라오는 국내 사이트를 먼저 찾아보게 한다(제한은 아님).
+const siteHints = {
+  교육: ['festa.io', 'event-us.kr', 'onoffmix.com', 'linkareer.com'],
+  커리어: ['festa.io', 'event-us.kr', 'onoffmix.com', 'linkareer.com'],
+  라이프: ['popply.co.kr', 'culture.seoul.go.kr', 'visitseoul.net'],
+  스포츠: ['visitseoul.net', 'culture.seoul.go.kr'],
+  음식: ['visitseoul.net', 'culture.seoul.go.kr'],
+  커뮤니티: ['onoffmix.com', 'culture.seoul.go.kr'],
+};
+const discoveryLimit = 8;
 const normalizeUrl = (value) => {
   try {
     const url = new URL(value);
@@ -59,9 +69,10 @@ export function discoveryTopic(interests) {
 export function verifiedDiscoveries(response, currentTime = Date.now()) {
   if (response.status !== 'completed') return [];
   const output = response.output || [];
+  // 검색 결과뿐 아니라 열어 본 페이지 주소도 근거로 인정한다.
   const sources = new Set(output.filter((item) => item.type === 'web_search_call')
-    .flatMap((item) => item.action?.sources || [])
-    .map((item) => normalizeUrl(item.url)).filter(Boolean));
+    .flatMap((item) => [...(item.action?.sources || []).map((source) => source.url), item.action?.url])
+    .map((url) => normalizeUrl(url)).filter(Boolean));
   if (!sources.size) return [];
   const text = output.flatMap((item) => item.content || [])
     .find((item) => item.type === 'output_text')?.text;
@@ -84,7 +95,7 @@ export function verifiedDiscoveries(response, currentTime = Date.now()) {
       seen.add(sourceUrl);
       return [event];
     } catch { return []; }
-  }).slice(0, 5);
+  }).slice(0, discoveryLimit);
 }
 
 export async function discoverEvents(topic, { fetchImpl = fetch, currentTime = Date.now(), subject = topic } = {}) {
@@ -109,13 +120,24 @@ export async function discoverEvents(topic, { fetchImpl = fetch, currentTime = D
     method: 'POST',
     headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || 'gpt-4.1-mini', store: false,
-      tools: [{ type: 'web_search', search_context_size: 'medium' }],
+      // 검색을 여러 번 이어 가는 추론 모델을 쓴다. 한 번만 검색하는 모델은 결과가 거의 없었다.
+      model: process.env.DISCOVERY_MODEL || 'gpt-5-mini', store: false, reasoning: { effort: 'low' },
+      tools: [{ type: 'web_search', search_context_size: 'high', user_location: { type: 'approximate', country: 'KR', city: 'Seoul', timezone: 'Asia/Seoul' } }],
       tool_choice: 'required', include: ['web_search_call.action.sources'],
-      input: `현재 ${new Date(currentTime).toISOString()}. 한국에서 앞으로 180일 안에 열리는 실제 ${subject} 및 관련 과학·소프트웨어·교육·정책 주제의 ${topic} (${family}) 행사를 최대 5개 찾으세요. ${officialDomains[family] ? `site:${officialDomains[family].join(' 또는 site:')} 사이트에서만 찾으세요.` : ''} 각 행사에 대해 주최자·공공기관·공식 행사장의 개별 상세 페이지에서 제목, 날짜와 시간, 장소를 확인하세요. 검색 결과 목록·검색 페이지·홈페이지 주소는 제외하세요. 페이지에 근거가 없으면 반환하지 마세요. sourceUrl은 검색한 공식 상세 페이지 URL 그대로여야 합니다. startsAt과 endsAt은 +09:00을 포함한 ISO 8601로 쓰세요. 진행 중인 전시처럼 기간과 관람 시간이 따로 있다면 내일 이후 실제 관람 가능한 날의 방문 시간 14:00~16:00을 추천하고 후보마다 서로 다른 방문 날짜를 택하세요. description에 '추천 방문 시간'임을 밝히세요. 이미 지난 일정이나 운영 시간이 불명확한 행사는 제외하세요. 결과는 한국어로 작성하고 관련된 세부 카테고리를 고르세요. format에는 행사 형식, domains에는 제목과 상세 내용으로 확인한 실제 주제 분야만 넣으세요. 찾지 못하면 events를 빈 배열로 반환하세요.`,
+      input: [
+        `현재 ${new Date(currentTime).toISOString()}. 한국(서울과 수도권 우선)에서 앞으로 60일 안에 열리는 실제 '${topic}' 행사(${family} 분야${subject !== topic ? `, 관련 주제: ${subject}` : ''})를 찾으세요.`,
+        `검색어를 바꿔 가며 여러 번 검색하고 최대 ${discoveryLimit}개를 반환하세요.`,
+        officialDomains[family] ? `site:${officialDomains[family].join(' 또는 site:')} 사이트에서만 찾으세요.`
+          : siteHints[family] ? `행사가 많이 올라오는 ${siteHints[family].join(', ')} 같은 사이트와 주최 기관 페이지를 먼저 찾아보세요.` : '',
+        '각 행사는 주최자·공공기관·예매처·행사 플랫폼의 개별 상세 페이지에서 제목, 날짜와 시간, 장소를 확인한 것만 넣으세요. 검색 결과 목록·검색 페이지·홈페이지 주소는 제외하세요. 페이지에 근거가 없으면 반환하지 마세요.',
+        'sourceUrl은 확인한 상세 페이지 URL 그대로여야 합니다. startsAt과 endsAt은 +09:00을 포함한 ISO 8601로 쓰세요.',
+        "진행 중인 전시·팝업처럼 기간과 운영 시간이 따로 있다면 내일 이후 실제로 갈 수 있는 날의 방문 시간 14:00~16:00을 추천하고 후보마다 서로 다른 날짜를 택하세요. description에 '추천 방문 시간'임을 밝히세요.",
+        '이미 지난 일정, 해외 행사, 온라인 전용 행사, 운영 시간이 불명확한 행사는 제외하세요. 결과는 한국어로 쓰고 가장 가까운 세부 카테고리를 고르세요. format에는 행사 형식, domains에는 상세 내용으로 확인한 주제 분야만 넣으세요. 찾지 못하면 events를 빈 배열로 반환하세요.',
+      ].filter(Boolean).join(' '),
+
       text: { format: { type: 'json_schema', name: 'event_discovery', strict: true, schema } },
     }),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(90000),
   });
   if (!response.ok) {
     console.error('OpenAI discovery status:', response.status);

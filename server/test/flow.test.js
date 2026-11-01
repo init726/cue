@@ -14,12 +14,14 @@ test('analysis stops after rejection and approved interests drive recommendation
   process.env.SUPABASE_PUBLISHABLE_KEY = '';
   process.env.OPENAI_API_KEY = 'test-key';
   process.env.KAKAO_REST_API_KEY = '';
+  process.env.SEOUL_OPEN_API_KEY = '';
+  delete process.env.RENDER_GIT_COMMIT;
   process.env.CATALOG_ADMIN_TOKEN = 'test-admin-token';
   const { server } = await import('../src/server.js');
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   // Supabase를 설정하지 않은 로컬 테스트에서는 데이터베이스 확인을 건너뛴다고 알려야 한다.
-  assert.deepEqual(await (await fetch(`${base}/health/deep`)).json(), { ok: true, database: 'not_configured', places: false });
+  assert.deepEqual(await (await fetch(`${base}/health/deep`)).json(), { ok: true, database: 'not_configured', places: false, seoul: false, version: null });
   const realFetch = globalThis.fetch;
   const answers = [];
   const aiInputs = [];

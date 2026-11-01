@@ -27,7 +27,8 @@ const rate = new Map();
 const discoveryJobs = new Map();
 const fallbackTopics = ['기술', '음악', '공연', '강연', '워크숍', '스포츠'];
 
-async function discoverFor(data, userId) {
+// parallel개 주제를 한꺼번에 찾는다. 추천이 비어 있을 때는 여러 주제를 동시에 찾아 기다리는 시간을 줄인다.
+async function discoverFor(data, userId, { parallel = 1 } = {}) {
   // 온보딩에서 고른 관심 분야도 검색 주제로 쓴다.
   const favorites = data === store ? store.profile(userId)?.favoriteTopics || []
     : (await data.one('profiles', { user_id: `eq.${userId}` }))?.favorite_topics || [];
@@ -36,33 +37,34 @@ async function discoverFor(data, userId) {
   // 관심사가 없으면 기본 주제로 찾는다. 찾은 행사는 둘러보기 묶음으로 보여준다.
   const topics = discoveryTopics(interests);
   const candidates = [...topics,
-    ...(exploreEnabled() || !topics.length ? fallbackTopics.map((topic) => ({ topic, subject: topic })) : [])];
-  const jobs = candidates.map(({ topic, subject }) => discoveryJobs.get(`${topic}:${subject}`));
-  const running = jobs.find((job) => job && !job.done);
-  if (running) {
-    await running.promise;
-    return false;
-  }
-  const next = candidates.find((_, index) => !jobs[index] || Date.now() - jobs[index].startedAt >= jobs[index].retryAfter);
-  if (!next) return false;
-  const { topic, subject } = next;
-  const jobKey = `${topic}:${subject}`;
-  const job = { startedAt: Date.now(), retryAfter: 15 * 60 * 1000, promise: null };
-  const promise = (async () => {
-    const candidates = await discoverCatalogEvents(topic, { subject });
-    if (!candidates.length) return;
-    const catalog = await data.rows('events', { source_type: 'eq.catalog' });
-    const existing = new Set(catalog.filter((event) => Date.parse(event.end_at) > Date.now())
-      .map((event) => event.source_url).filter(Boolean));
-    await importCloudCatalog(candidates.filter((event) => !existing.has(event.sourceUrl))
-      .map((event) => ({ ...event, originKind: 'web' })));
-    job.retryAfter = 12 * 60 * 60 * 1000;
-  })();
-  job.promise = promise.finally(() => { job.done = true; });
-  discoveryJobs.set(jobKey, job);
-  job.promise.catch(() => { if (discoveryJobs.get(jobKey) === job) discoveryJobs.delete(jobKey); });
-  await job.promise;
-  return true;
+    ...(exploreEnabled() || topics.length < parallel ? fallbackTopics.map((topic) => ({ topic, subject: topic })) : [])]
+    .filter((item, index, all) => all.findIndex((other) => other.topic === item.topic) === index);
+  const running = candidates.map(({ topic, subject }) => discoveryJobs.get(`${topic}:${subject}`))
+    .filter((job) => job && !job.done);
+  const ready = candidates.filter(({ topic, subject }) => {
+    const job = discoveryJobs.get(`${topic}:${subject}`);
+    return !job || (job.done && Date.now() - job.startedAt >= job.retryAfter);
+  }).slice(0, Math.max(0, parallel - running.length));
+  const started = ready.map(({ topic, subject }) => {
+    const jobKey = `${topic}:${subject}`;
+    const job = { startedAt: Date.now(), retryAfter: 15 * 60 * 1000, promise: null };
+    const promise = (async () => {
+      const found = await discoverCatalogEvents(topic, { subject });
+      if (!found.length) return;
+      const catalog = await data.rows('events', { source_type: 'eq.catalog' });
+      const existing = new Set(catalog.filter((event) => Date.parse(event.end_at) > Date.now())
+        .map((event) => event.source_url).filter(Boolean));
+      await importCloudCatalog(found.filter((event) => !existing.has(event.sourceUrl))
+        .map((event) => ({ ...event, originKind: 'web' })));
+      job.retryAfter = 12 * 60 * 60 * 1000;
+    })();
+    job.promise = promise.finally(() => { job.done = true; });
+    discoveryJobs.set(jobKey, job);
+    job.promise.catch(() => { if (discoveryJobs.get(jobKey) === job) discoveryJobs.delete(jobKey); });
+    return job.promise;
+  });
+  await Promise.allSettled([...running.map((job) => job.promise), ...started]);
+  return started.length > 0;
 }
 
 // 하루 한 번 예약 작업이 부르는 카탈로그 채우기. 서울시 문화행사 API(무료)를 먼저 가져오고,
@@ -291,7 +293,9 @@ export const server = http.createServer(async (req, res) => {
       if (!allowed(`deep-health:${ip}`, 12, 60 * 60 * 1000)) return send(res, 429, { error: '요청이 너무 많아요.' });
       const database = await pingCloud();
       // places는 지도 검색 키가 설정됐는지만 알린다. 키 값은 내보내지 않는다.
-      return send(res, database === 'error' ? 503 : 200, { ok: database !== 'error', database, places: placesEnabled() });
+      // version은 Render가 넣어 주는 배포 커밋. 어떤 코드가 돌고 있는지 밖에서 확인할 수 있다.
+      return send(res, database === 'error' ? 503 : 200, { ok: database !== 'error', database, places: placesEnabled(),
+        seoul: Boolean(process.env.SEOUL_OPEN_API_KEY), version: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || null });
     }
 
     if (req.method === 'POST' && route === '/v1/session') {
@@ -432,7 +436,7 @@ export const server = http.createServer(async (req, res) => {
       if (demo) return send(res, 200, { events: publicEvents(events) });
       if (!events.length && user.supabase) {
         try {
-          await discoverFor(data, user.id);
+          await discoverFor(data, user.id, { parallel: 3 });
           events = await data.recommendations(user.id, options);
         } catch (error) {
           console.error('Event discovery:', error instanceof Error ? error.message : error);
