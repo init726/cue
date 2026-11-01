@@ -199,7 +199,7 @@ class _SavedEventEditorState extends State<SavedEventEditor> {
           SizedBox(height: 20),
           CueScheduleFields(
             start: start,
-            end: end,
+            length: end.difference(start),
             onChanged: (nextStart, nextEnd) => setState(() {
               start = nextStart;
               end = nextEnd;

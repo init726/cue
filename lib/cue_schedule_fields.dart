@@ -63,23 +63,21 @@ class CueWheelPicker extends StatelessWidget {
   }
 }
 
-enum _Field { startDate, startTime, endDate, endTime }
+enum _Field { date, time }
 
-/// 시작·종료 줄의 날짜나 시간을 누르면 바로 아래에 휠이 펼쳐진다(아이폰 캘린더의 새 이벤트 화면 방식).
-/// 시작을 옮기면 길이를 유지한 채 종료도 함께 옮긴다.
+/// 시작 날짜와 시간만 고른다. 날짜나 시간을 누르면 바로 아래에 휠이 펼쳐진다(아이폰 캘린더 방식).
+/// 끝나는 시간은 따로 묻지 않고 지금 길이를 유지해 시작 뒤로 붙인다.
 class CueScheduleFields extends StatefulWidget {
   const CueScheduleFields({
     super.key,
     required this.start,
-    required this.end,
+    required this.length,
     required this.onChanged,
-    this.durations = const [60, 90, 120, 180],
   });
 
   final DateTime start;
-  final DateTime end;
+  final Duration length;
   final void Function(DateTime start, DateTime end) onChanged;
-  final List<int> durations;
 
   @override
   State<CueScheduleFields> createState() => _CueScheduleFieldsState();
@@ -88,37 +86,23 @@ class CueScheduleFields extends StatefulWidget {
 class _CueScheduleFieldsState extends State<CueScheduleFields> {
   _Field? open;
 
-  Duration get length {
-    final value = widget.end.difference(widget.start);
-    return value > Duration.zero ? value : const Duration(hours: 1);
-  }
+  Duration get length => widget.length > Duration.zero ? widget.length : const Duration(hours: 2);
 
   void _apply(_Field field, DateTime value) {
-    final start = widget.start, end = widget.end;
-    switch (field) {
-      case _Field.startDate:
-        final next = DateTime(value.year, value.month, value.day, start.hour, start.minute);
-        widget.onChanged(next, next.add(length));
-      case _Field.startTime:
-        final next = DateTime(start.year, start.month, start.day, value.hour, value.minute);
-        widget.onChanged(next, next.add(length));
-      case _Field.endDate:
-        widget.onChanged(start, DateTime(value.year, value.month, value.day, end.hour, end.minute));
-      case _Field.endTime:
-        widget.onChanged(start, DateTime(end.year, end.month, end.day, value.hour, value.minute));
-    }
+    final start = widget.start;
+    final next = field == _Field.date
+        ? DateTime(value.year, value.month, value.day, start.hour, start.minute)
+        : DateTime(start.year, start.month, start.day, value.hour, value.minute);
+    widget.onChanged(next, next.add(length));
   }
-
-  void _toggle(_Field field) => setState(() => open = open == field ? null : field);
 
   @override
   Widget build(BuildContext context) {
     final palette = CuePalette(context);
-    final invalid = !widget.end.isAfter(widget.start);
-    Widget pill(_Field field, String text, {bool error = false}) {
+    Widget pill(_Field field, String text) {
       final selected = open == field;
       return GestureDetector(
-        onTap: () => _toggle(field),
+        onTap: () => setState(() => open = selected ? null : field),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
           decoration: BoxDecoration(
@@ -126,62 +110,38 @@ class _CueScheduleFieldsState extends State<CueScheduleFields> {
             borderRadius: BorderRadius.circular(9),
           ),
           child: Text(text, style: TextStyle(
-            color: error ? const Color(0xFFE5484D) : selected ? palette.accent : palette.ink,
+            color: selected ? palette.accent : palette.ink,
             fontWeight: FontWeight.w600,
-            decoration: error ? TextDecoration.lineThrough : null,
           )),
         ),
       );
     }
 
-    Widget row(String label, _Field date, _Field time, DateTime value, {bool error = false}) => Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Row(children: [
-        Text(label, style: TextStyle(color: palette.ink, fontSize: 16)),
-        const Spacer(),
-        pill(date, cueDateLabel(value), error: error),
-        const SizedBox(width: 6),
-        pill(time, cueTimeLabel(value), error: error),
-      ]),
-    );
-
-    Widget wheel(_Field field) => CueWheelPicker(
-      key: ValueKey(field),
-      mode: field == _Field.startDate || field == _Field.endDate
-          ? CupertinoDatePickerMode.date : CupertinoDatePickerMode.time,
-      value: field == _Field.startDate || field == _Field.startTime ? widget.start : widget.end,
-      onChanged: (value) => _apply(field, value),
-    );
-
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(
-        decoration: BoxDecoration(
-          color: palette.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: palette.border),
-        ),
-        child: Column(children: [
-          row('시작', _Field.startDate, _Field.startTime, widget.start),
-          if (open == _Field.startDate || open == _Field.startTime) wheel(open!),
-          Divider(height: 1, indent: 14, color: palette.border),
-          row('종료', _Field.endDate, _Field.endTime, widget.end, error: invalid),
-          if (open == _Field.endDate || open == _Field.endTime) wheel(open!),
-        ]),
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: palette.border),
       ),
-      const SizedBox(height: 10),
-      Wrap(spacing: 8, runSpacing: 8, children: [
-        for (final minutes in widget.durations)
-          ChoiceChip(
-            label: Text(cueDurationLabel(Duration(minutes: minutes))),
-            selected: !invalid && widget.end.difference(widget.start).inMinutes == minutes,
-            showCheckmark: false,
-            onSelected: (_) => widget.onChanged(widget.start, widget.start.add(Duration(minutes: minutes))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(children: [
+            Text('시작', style: TextStyle(color: palette.ink, fontSize: 16)),
+            const Spacer(),
+            pill(_Field.date, cueDateLabel(widget.start)),
+            const SizedBox(width: 6),
+            pill(_Field.time, cueTimeLabel(widget.start)),
+          ]),
+        ),
+        if (open != null)
+          CueWheelPicker(
+            key: ValueKey(open),
+            mode: open == _Field.date ? CupertinoDatePickerMode.date : CupertinoDatePickerMode.time,
+            value: widget.start,
+            onChanged: (value) => _apply(open!, value),
           ),
       ]),
-      if (invalid) ...[
-        const SizedBox(height: 8),
-        const Text('종료 시간이 시작 시간보다 늦어야 해요.', style: TextStyle(color: Color(0xFFE5484D), fontSize: 13)),
-      ],
-    ]);
+    );
   }
 }

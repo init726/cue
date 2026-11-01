@@ -138,10 +138,10 @@ class _CuePeriodPlannerState extends State<CuePeriodPlanner> {
           Expanded(child: GestureDetector(
             onTap: () => setState(() => wheelOpen = !wheelOpen),
             child: Column(children: [
-              Text('${_clock(chosen.start)} – ${_clock(chosen.end)}',
+              Text('${_clock(chosen.start)} 도착',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: palette.ink, fontSize: 22, fontWeight: FontWeight.w800)),
-              Text(wheelOpen ? '닫기' : '눌러서 시작 시간 고르기',
+              Text(wheelOpen ? '닫기' : '눌러서 시간 고르기',
                   style: TextStyle(color: palette.accent, fontSize: 12, fontWeight: FontWeight.w600)),
             ]),
           )),
@@ -162,16 +162,9 @@ class _CuePeriodPlannerState extends State<CuePeriodPlanner> {
             maximum: _lastStart(window),
             onChanged: (value) => setState(() => start = value),
           ),
-        const SizedBox(height: 10),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final minutes in {60, 90, 120, 180, period.visitMinutes}.toList()..sort())
-            ChoiceChip(
-              label: Text(cueDurationLabel(Duration(minutes: minutes))),
-              selected: visit.inMinutes == minutes,
-              showCheckmark: false,
-              onSelected: (_) => setState(() => visit = Duration(minutes: minutes)),
-            ),
-        ]),
+        const SizedBox(height: 6),
+        Center(child: Text('${cueDurationLabel(chosen.end.difference(chosen.start))} 머무는 일정으로 저장해요',
+            style: TextStyle(color: palette.muted, fontSize: 13))),
         const SizedBox(height: 12),
         if (overlaps.isNotEmpty)
           _note(palette, Icons.event_busy_outlined, '${overlaps.first.title}과(와) 겹쳐요. 막대를 눌러 옮겨 보세요.', warn: true),
@@ -179,8 +172,6 @@ class _CuePeriodPlannerState extends State<CuePeriodPlanner> {
           _note(palette, Icons.info_outline, '안내문에 운영 시간이 없어 10:00–18:00으로 가정했어요. 방문 전에 확인해 주세요.', warn: true),
         if (window.printedLastEntry)
           _note(palette, Icons.login_rounded, '입장 마감 ${_clock(window.latestStart)}'),
-        if (chosen.end.difference(chosen.start) < visit)
-          _note(palette, Icons.timelapse_outlined, '문 닫는 시간까지 ${chosen.end.difference(chosen.start).inMinutes}분만 머물 수 있어요.'),
       ] else ...[
         const SizedBox(height: 14),
         _note(palette, Icons.event_outlined, '방문할 날짜를 골라 주세요.'),

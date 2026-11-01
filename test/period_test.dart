@@ -88,13 +88,12 @@ void main() {
     ));
     expect(find.text('2026년 11월'), findsOneWidget);
     expect(find.text('가장 빠른 빈 날'), findsOneWidget);
-    expect(find.text('14:00 – 15:30'), findsOneWidget, reason: '첫 추천(11.3 화)이 미리 선택된다');
+    expect(find.text('14:00 도착'), findsOneWidget, reason: '첫 추천(11.3 화)이 미리 선택된다');
+    expect(find.text('1시간 30분 머무는 일정으로 저장해요'), findsOneWidget);
+    expect(find.text('종료'), findsNothing);
     await tester.tap(find.text('4'));
     await tester.pump();
-    expect(find.text('15:30 – 17:00'), findsOneWidget, reason: '점심 약속을 피해 놓는다');
-    await tester.tap(find.text('2시간'));
-    await tester.pump();
-    expect(find.text('15:30 – 17:30'), findsOneWidget);
+    expect(find.text('15:30 도착'), findsOneWidget, reason: '점심 약속을 피해 놓는다');
     await tester.tap(find.byTooltip('30분 앞으로'));
     await tester.pump();
     expect(find.textContaining('겹쳐요'), findsNothing, reason: '15:00 시작은 점심 약속이 끝난 뒤다');
@@ -108,7 +107,7 @@ void main() {
     expect(find.text('2026년 12월'), findsOneWidget);
     await tester.tap(find.text('11.4 (수) 15:00에 가기'));
     expect(confirmed!.start, DateTime(2026, 11, 4, 15));
-    expect(confirmed!.end, DateTime(2026, 11, 4, 17));
+    expect(confirmed!.end, DateTime(2026, 11, 4, 16, 30));
   });
 
   testWidgets('short periods use a day strip', (tester) async {
@@ -128,7 +127,7 @@ void main() {
     ));
     expect(find.textContaining('년'), findsNothing);
     expect(find.text('목'), findsWidgets);
-    expect(find.text('45분'), findsOneWidget);
+    expect(find.text('45분 머무는 일정으로 저장해요'), findsOneWidget);
     expect(find.text('11.5 (목) 14:00에 가기'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
