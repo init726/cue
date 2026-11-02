@@ -1923,12 +1923,24 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
 
   Widget _scroll(Widget child, {Future<void> Function()? onRefresh}) {
     final view = SingleChildScrollView(
-      physics: onRefresh == null ? null : AlwaysScrollableScrollPhysics(),
+      // 내용이 짧아도 당길 수 있고, iOS처럼 끝에서 튕긴다.
+      physics: onRefresh == null ? null : AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
       child: Padding(padding: EdgeInsets.fromLTRB(20, 20, 20, 32), child: child),
     );
     return onRefresh == null
         ? view
-        : RefreshIndicator(color: accent, onRefresh: onRefresh, child: view);
+        : RefreshIndicator(
+            color: accent,
+            backgroundColor: colors.surface,
+            strokeWidth: 2.6,
+            displacement: 56,
+            elevation: 3,
+            onRefresh: () async {
+              HapticFeedback.mediumImpact();
+              await onRefresh();
+            },
+            child: view,
+          );
   }
   Widget _header() => Padding(
     padding: EdgeInsets.fromLTRB(22, 14, 22, 8),
@@ -3152,20 +3164,14 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: GestureDetector(
-            onTap: _editTopics,
-            // 직접 고른 분야를 먼저, 저장 기록에서 배운 분야를 뒤에 보여준다.
-            child: _pageTitle('추천 행사', interestLabels.isEmpty && favoriteTopics.isEmpty
-                ? '저장한 행사로 취향을 배워요'
-                : '${{...favoriteTopics, ...interestLabels}.take(3).join('·')}에 관심이 많아요'),
-          )),
-          IconButton.filledTonal(
-            onPressed: recommendationLoading ? null : () => _refresh(shuffle: true),
-            icon: Icon(Icons.refresh_rounded),
-            tooltip: '다른 행사 보기',
-          ),
-        ]),
+        // 새 추천은 화면을 아래로 당겨 받는다(_scroll의 RefreshIndicator).
+        GestureDetector(
+          onTap: _editTopics,
+          // 직접 고른 분야를 먼저, 저장 기록에서 배운 분야를 뒤에 보여준다.
+          child: _pageTitle('추천 행사', interestLabels.isEmpty && favoriteTopics.isEmpty
+              ? '저장한 행사로 취향을 배워요 · 당기면 새로 찾아요'
+              : '${{...favoriteTopics, ...interestLabels}.take(3).join('·')}에 관심이 많아요'),
+        ),
         SizedBox(height: 12),
         _locationBar(),
         if (favoriteTopics.isEmpty && interestLabels.isEmpty) ...[
@@ -3193,7 +3199,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ]))
         else if (recommended.isEmpty)
           _empty(Icons.explore_outlined, '아직 보여드릴 행사가 없어요',
-              '포스터를 하나 저장하면 비슷한 행사를 찾아드려요. 오른쪽 위 버튼으로 다시 찾을 수 있어요.'),
+              '포스터를 하나 저장하면 비슷한 행사를 찾아드려요. 화면을 아래로 당기면 다시 찾아요.'),
         for (final (key, title, defaultSubtitle) in _recommendationSections)
           if (sections[key]?.isNotEmpty == true) ...[
             Padding(
