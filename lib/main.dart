@@ -32,9 +32,12 @@ import 'cue_upcoming.dart';
 import 'saved_event_editor.dart';
 
 final cueThemeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
+// release 빌드에서 CUE_API_URL을 빠뜨려도 개발용 localhost가 아니라 배포 서버로 연결한다.
 const cueApiUrl = String.fromEnvironment(
   'CUE_API_URL',
-  defaultValue: 'http://localhost:8787',
+  defaultValue: bool.fromEnvironment('dart.vm.product')
+      ? 'https://cue-api-vczh.onrender.com'
+      : 'http://localhost:8787',
 );
 
 ThemeData cueTheme(Brightness brightness) {

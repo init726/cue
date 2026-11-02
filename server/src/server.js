@@ -290,6 +290,11 @@ async function askOpenAI(sourceParts, instruction, schema, name) {
     const text = result.output?.flatMap((item) => item.content || []).find((item) => item.type === 'output_text')?.text;
     if (!text) throw Object.assign(new Error('AI 응답을 읽지 못했어요.'), { status: 502 });
     return JSON.parse(text);
+  } catch (error) {
+    // 시간 초과와 깨진 JSON도 앱에 이유가 보이는 오류로 돌려준다.
+    if (error?.name === 'AbortError') throw Object.assign(new Error('AI 분석이 오래 걸려요. 잠시 후 다시 시도해 주세요.'), { status: 504 });
+    if (error instanceof SyntaxError) throw Object.assign(new Error('AI 응답을 읽지 못했어요.'), { status: 502 });
+    throw error;
   } finally { clearTimeout(timeout); }
 }
 

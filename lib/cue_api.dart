@@ -152,6 +152,7 @@ class CueApi {
     String method,
     String route, [
     Map<String, dynamic>? body,
+    bool retried = false,
   ]) async {
     final uri = Uri.parse('$baseUrl$route');
     try {
@@ -167,6 +168,17 @@ class CueApi {
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
       if (decoded is! Map<String, dynamic>) {
         throw const CueApiException('서버 응답 형식이 올바르지 않아요.');
+      }
+      // 앱이 오래 쉬었다 깨어나면 만료된 토큰이 먼저 나갈 수 있다. 한 번 갱신하고 다시 보낸다.
+      if (response.statusCode == 401 && useSupabaseAuth && !retried) {
+        var refreshed = false;
+        try {
+          await Supabase.instance.client.auth.refreshSession();
+          refreshed = true;
+        } catch (_) {
+          // 갱신하지 못하면 원래 오류를 보여준다.
+        }
+        if (refreshed) return _request(method, route, body, true);
       }
       if (response.statusCode >= 400) {
         throw CueApiException(

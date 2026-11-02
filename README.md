@@ -1,5 +1,7 @@
 # Cue
 
+포스터·공지·문서 입력 → AI 행사 판별 → 일정 정보 추출 → 사용자 확인 → 기기 캘린더 저장 → 행동 기반 개인화 추천
+
 행사 포스터·공지문 사진 또는 PDF·HWP·HWPX 파일을 선택하면 AI가 행사 여부를 먼저 판정하고, 행사일 때만 이름·종류·시간·장소 후보를 추출하는 Flutter 앱입니다. 사용자가 후보를 확인하고 승인해야 기기 캘린더에 일정과 알림이 저장됩니다. 저장·관심 표시 등의 행동으로 취향을 점진적으로 파악해 등록된 행사를 추천합니다.
 
 ## 구성
@@ -29,23 +31,26 @@ flutter pub get
 flutter run --dart-define=CUE_API_URL=http://localhost:8787
 # Android 에뮬레이터: 호스트는 10.0.2.2
 flutter run --dart-define=CUE_API_URL=http://10.0.2.2:8787
-# 이번 iPhone 실기기: Mac의 Cue 서버(8788)
-flutter run --release -d 00008140-000E65980C10801C --dart-define=CUE_API_URL=http://gimnagyun-ui-MacBookAir.local:8788
+# iPhone 실기기(release): 배포 서버
+flutter run --release -d <iPhone-device-id> \
+  --dart-define=CUE_API_URL=https://cue-api-vczh.onrender.com \
+  --dart-define=SUPABASE_URL=https://<project>.supabase.co \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable-key>
 ```
 
-위 iPhone 주소는 같은 로컬 네트워크에서 테스트하기 위한 것입니다. Mac 서버를 종료하거나 네트워크가 바뀌면 분석할 수 없습니다. 외부 배포에서는 HTTPS 서버 주소를 사용하세요. 개발용 Android 디버그 빌드에서만 일반 HTTP 연결을 허용합니다. Supabase 설정이 없는 로컬 테스트 데이터는 권한 `600`의 `server/data/cue.sqlite`에 저장됩니다. 기존 `cue.json`이 있으면 새 DB의 첫 시작에서 사용자 토큰·저장 일정·추천 목록을 한 번 가져옵니다. 원본 JSON은 백업으로 남고 두 파일 모두 Git에서 제외됩니다.
+실기기에서는 배포된 HTTPS 서버 주소를 사용합니다. release 빌드에서 `CUE_API_URL`을 빠뜨리면 배포 서버 주소를 기본값으로 씁니다(디버그 빌드는 `http://localhost:8787`). 개발용 Android 디버그 빌드에서만 일반 HTTP 연결을 허용합니다. Supabase 설정이 없는 로컬 테스트 데이터는 권한 `600`의 `server/data/cue.sqlite`에 저장됩니다. 기존 `cue.json`이 있으면 새 DB의 첫 시작에서 사용자 토큰·저장 일정·추천 목록을 한 번 가져옵니다. 원본 JSON은 백업으로 남고 두 파일 모두 Git에서 제외됩니다.
 
 ## 서버 배포 (Render)
 
-저장소 루트의 `render.yaml`은 싱가포르 지역의 무료 Node 웹 서비스를 설정합니다. Render Dashboard에서 GitHub 저장소 `1NlT/cue`의 Blueprint를 만들고, 생성 화면에서 `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`를 환경변수로 입력합니다. 공연 추천에 KOPIS를 쓰려면 `KOPIS_API_KEY`도 입력합니다(선택). 행사장을 지도의 실제 장소로 찾으려면 카카오 로컬 REST API 키를 `KAKAO_REST_API_KEY`로 입력합니다(선택). 키가 없으면 앱은 입력한 장소 이름을 그대로 씁니다. 키 값은 Git에 넣지 않습니다. 무료 서비스는 유휴 시 잠들어 첫 요청이 지연될 수 있으므로 앱은 서버 시작을 기다릴 수 있어야 합니다.
+저장소 루트의 `render.yaml`은 싱가포르 지역의 무료 Node 웹 서비스를 설정합니다. Render Dashboard에서 GitHub 저장소 `init726/cue`의 Blueprint를 만들고, 생성 화면에서 `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`를 환경변수로 입력합니다. 공연 추천에 KOPIS를 쓰려면 `KOPIS_API_KEY`도 입력합니다(선택). 행사장을 지도의 실제 장소로 찾으려면 카카오 로컬 REST API 키를 `KAKAO_REST_API_KEY`로 입력합니다(선택). 키가 없으면 앱은 입력한 장소 이름을 그대로 씁니다. 추천 행사 수집용 `SEOUL_OPEN_API_KEY`(서울 열린데이터광장 문화행사), `TOUR_API_KEY`(공공데이터포털 한국관광공사 국문 관광정보 서비스_GW), `CATALOG_ADMIN_TOKEN`(수집·등록 관리자 토큰)도 선택입니다. 선택 키가 없거나 해당 서비스가 실패해도 분석과 일정 저장은 그대로 동작합니다. 키 값은 Git에 넣지 않습니다. 무료 서비스는 유휴 시 잠들어 첫 요청이 지연될 수 있으므로 앱은 서버 시작을 기다릴 수 있어야 합니다.
 
-배포가 끝나면 `https://<배포된 호스트>/health`가 `{"ok":true}`를 반환하는지 확인합니다. `/health/deep`은 Supabase까지 조회해 `{"ok":true,"database":"ok"}`를 반환합니다. Supabase 무료 프로젝트는 한동안 요청이 없으면 일시 정지되므로, `.github/workflows/keepalive.yml`이 사흘마다 이 주소를 호출합니다. 서버 주소가 바뀌면 저장소 변수 `CUE_API_URL`을 설정하세요. 앱은 빌드 시 `--dart-define=CUE_API_URL=https://<배포된 호스트>`를 지정하고, 기존 Supabase URL 및 publishable key도 그대로 전달해 다시 설치합니다. 기존 설치 앱에 포함된 Mac `.local` 주소는 서버 배포만으로 바뀌지 않습니다. `CUE_CLOUD_REQUIRED=1`은 배포 필수 키가 빠진 경우 시작을 막고, 로컬 토큰으로 임시 SQLite 계정이 생성되는 것을 막습니다. SQLite 파일은 호스트 재시작 시 사라질 수 있으므로 사용자 데이터는 Supabase를 사용합니다.
+배포가 끝나면 `https://<배포된 호스트>/health`가 `{"ok":true}`를 반환하는지 확인합니다. `/health/deep`은 Supabase까지 조회해 `{"ok":true,"database":"ok",...}`를 반환하고, 선택 키 설정 여부(`places`, `seoul`, `tour`)와 배포 커밋(`version`)을 함께 알려 줍니다. `.github/workflows/catalog-refresh.yml`은 매일 저장소 시크릿 `CATALOG_ADMIN_TOKEN`으로 `POST /v1/catalog/refresh`를 호출해 추천 행사 목록을 채웁니다. Supabase 무료 프로젝트는 한동안 요청이 없으면 일시 정지되므로, `.github/workflows/keepalive.yml`이 사흘마다 이 주소를 호출합니다. 서버 주소가 바뀌면 저장소 변수 `CUE_API_URL`을 설정하세요. 앱은 빌드 시 `--dart-define=CUE_API_URL=https://<배포된 호스트>`를 지정하고, 기존 Supabase URL 및 publishable key도 그대로 전달해 다시 설치합니다. `CUE_CLOUD_REQUIRED=1`은 배포 필수 키가 빠진 경우 시작을 막고, 로컬 토큰으로 임시 SQLite 계정이 생성되는 것을 막습니다. SQLite 파일은 호스트 재시작 시 사라질 수 있으므로 사용자 데이터는 Supabase를 사용합니다.
 
 ## 사용자 기억과 추천
 
 - 설치별 익명 토큰으로 사용자를 분리합니다. 사용자별 `profiles`, `events`, `event_sessions`, `user_events`, `event_interactions`, `interest_profiles`, `goals`, `tasks`, `agent_memories`, `recommendations` 테이블을 서버 DB에 둡니다.
 - `관심 있음`, `관심 없음`, `계획하기`, 일정 저장·취소를 원본 행동으로 기록합니다. 가중치와 90일 감쇠 규칙은 `server/src/personalization.js`에 모았습니다. 반복된 근거가 있을 때만 만료 기한이 있는 Memory를 만듭니다.
-- 추천은 실제 등록된 미래 행사 중 관심 분야에 맞고 신청 기한이 지나지 않았으며 Cue에 저장한 일정과 겹치지 않는 후보를 고릅니다. 기기 캘린더 전체나 위치 정보는 현재 읽지 않으므로 그 조건을 추정하지 않습니다. 추천 이유와 사용자 반응을 기록합니다.
+- 추천은 실제 등록된 미래 행사 중 관심 분야에 맞고 신청 기한이 지나지 않았으며 Cue에 저장한 일정과 겹치지 않는 후보를 고릅니다. 캘린더 권한이 있으면 앞으로 7일의 바쁜 시간(제목 없이 시작·종료만)을 보내 빈 시간에 맞는 행사를 먼저 보여 줍니다. 사용자가 허용하면 대략적인 활동 지역 좌표로 가까운 행사를 고르며, 정확한 위치는 저장하지 않습니다. 추천 이유와 사용자 반응을 기록합니다.
 - 설정에서 개인화를 끄면 새 관심 행동 기록과 추천을 중단하고 계산된 관심도·Memory를 비웁니다. `DELETE /v1/account`는 서버의 사용자 데이터를 삭제합니다. 기기 캘린더 항목은 별도로 관리합니다.
 
 ## Supabase 연결
@@ -54,10 +59,11 @@ SQL 마이그레이션을 프로젝트 SQL Editor에서 실행하고 익명 로�
 
 ## 추천 행사 등록
 
-추천은 확인 가능한 행사 목록을 기반으로 합니다. 목록이 비어 있으면 앱은 빈 상태를 보여주며, 임의의 행사를 만들어 추천하지 않습니다. Supabase 사용자의 추천이 비었거나 새로고침하면 서버가 가장 관심 있는 분야의 공식 출처에서 행사를 찾아 목록에 더합니다. 아직 관심 분야가 없는 사용자는 찾은 행사가 추천되지 않으므로 검색하지 않습니다.
+추천은 확인 가능한 행사 목록을 기반으로 합니다. 목록이 비어 있으면 앱은 빈 상태를 보여주며, 임의의 행사를 만들어 추천하지 않습니다. Supabase 사용자의 추천이 비었거나 새로고침하면 서버가 가장 관심 있는 분야의 공식 출처에서 행사를 찾아 목록에 더합니다. 관심 분야가 아직 없으면 강연·지역 축제·기술 같은 기본 주제로 찾습니다. 추천이 비어 있을 때는 최대 75초까지 검색을 기다린 뒤 응답하고, 덜 끝난 검색은 다음 새로고침에 반영합니다.
 
 - 전시: 서울시립미술관 공식 페이지를 직접 읽고, OpenAI 웹 검색으로 국립현대미술관·서울문화포털 상세 페이지를 함께 찾습니다. 상설 전시는 다음 3주 안의 날짜에 14:00~16:00 추천 방문 시간을 정합니다.
 - 음악·공연: `KOPIS_API_KEY`(공연예술통합전산망 [Open API](https://kopis.or.kr/por/cs/openapi/openApiInfo.do?menuId=MNU_00074) 서비스 키)가 있으면 앞으로 30일 안에 열리는 서울 공연을 가져와 내일 이후 가장 가까운 회차를 일정으로 씁니다. 키가 없거나 결과가 없으면 웹 검색을 씁니다.
+- 서울 문화행사·전국 축제: `SEOUL_OPEN_API_KEY`, `TOUR_API_KEY`가 있으면 매일 수집 때 공공 API에서 가져옵니다.
 - 그 밖의 분야: OpenAI 웹 검색. 검색 출처에 실제로 있는 공식 상세 페이지 URL만 받아들입니다.
 
 관리자가 `CATALOG_ADMIN_TOKEN` 환경변수를 설정한 뒤 실제 행사를 등록할 수도 있습니다.
@@ -69,7 +75,7 @@ curl -X POST http://localhost:8787/v1/catalog/import \
   -d '{"events":[{"title":"행사 이름","venue":"행사 장소","startsAt":"2027-01-01T18:00:00+09:00","endsAt":"2027-01-01T20:00:00+09:00","category":"음악","description":"공식 안내문에서 확인한 설명"}]}'
 ```
 
-지원 종류: 음악, 전시, 공연, 스포츠, 음식, 교육, 커뮤니티, 기타. 사용자가 저장한 행사 종류와 일치하는 미래 행사만 추천합니다.
+지원 종류는 `server/src/categories.js`(앱은 `lib/cue_categories.dart`)의 세부 카테고리 목록과 같습니다. 일정 저장·관심 표시로 쌓인 관심 분야와 온보딩에서 고른 분야를 기준으로 미래 행사를 추천합니다.
 
 ## 데이터와 예외 흐름
 
