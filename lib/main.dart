@@ -3935,10 +3935,11 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                       : () => _feedback(event, 'interested'),
                   icon: Icon(interested ? Icons.favorite : Icons.favorite_border, color: accent),
                 ),
-                PopupMenuButton<String>(
+                IconButton(
                   tooltip: '행사 더보기',
                   icon: Icon(Icons.more_horiz, color: muted),
-                  onSelected: (value) async {
+                  onPressed: () async {
+                    final value = await _recommendationActions(event, hasSource: sourceUrl != null);
                     if (value == 'dismiss') {
                       await _dismissRecommendation(event);
                     } else if (value == 'source' && sourceUrl != null) {
@@ -3949,11 +3950,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
                       }
                     }
                   },
-                  itemBuilder: (context) => [
-                    PopupMenuItem(value: 'dismiss', child: Text('관심 없음')),
-                    if (sourceUrl != null)
-                      PopupMenuItem(value: 'source', child: Text('원 안내 보기')),
-                  ],
                 ),
               ],
             ),
@@ -3961,6 +3957,84 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       ),
     );
   }
+
+  // 추천 카드의 더보기. 아래에서 올라오는 시트에 항목이 차례로 떠오른다. 고른 항목의 값을 돌려준다.
+  Future<String?> _recommendationActions(Map<String, dynamic> event, {required bool hasSource}) {
+    final actions = [
+      ('dismiss', Icons.visibility_off_outlined, '관심 없음', '이런 행사는 덜 보여드릴게요'),
+      if (hasSource) ('source', Icons.open_in_new_rounded, '원 안내 보기', '주최 측 안내 페이지를 열어요'),
+    ];
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: colors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      sheetAnimationStyle: AnimationStyle(
+        duration: Duration(milliseconds: 380),
+        reverseDuration: Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(6, 0, 6, 14),
+              child: Text(event['title'] as String? ?? '행사',
+                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: ink, fontSize: 17, fontWeight: FontWeight.w800, height: 1.35)),
+            ),
+            for (final (index, (value, icon, title, subtitle)) in actions.indexed)
+              _staggered(index, Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Material(
+                  color: colors.surfaceMuted,
+                  borderRadius: BorderRadius.circular(18),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.pop(sheetContext, value),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                      child: Row(children: [
+                        Container(
+                          width: 38, height: 38,
+                          decoration: BoxDecoration(color: colors.tint, shape: BoxShape.circle),
+                          child: Icon(icon, size: 19, color: colors.accentText),
+                        ),
+                        SizedBox(width: 13),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(title, style: TextStyle(color: ink, fontSize: 15.5, fontWeight: FontWeight.w800)),
+                          SizedBox(height: 3),
+                          Text(subtitle, style: TextStyle(color: muted, fontSize: 13)),
+                        ])),
+                        Icon(Icons.chevron_right_rounded, color: muted),
+                      ]),
+                    ),
+                  ),
+                ),
+              )),
+            _staggered(actions.length, TextButton(
+              onPressed: () => Navigator.pop(sheetContext),
+              style: TextButton.styleFrom(minimumSize: Size.fromHeight(46), foregroundColor: muted),
+              child: Text('닫기', style: TextStyle(fontWeight: FontWeight.w700)),
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  // 시트 안의 항목이 순서대로 살짝 올라오며 나타나게 한다.
+  Widget _staggered(int index, Widget child) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0, end: 1),
+    duration: Duration(milliseconds: 360 + index * 70),
+    curve: Interval(index * 70 / (360 + index * 70), 1, curve: Curves.easeOutCubic),
+    builder: (_, t, child) => Opacity(
+      opacity: t,
+      child: Transform.translate(offset: Offset(0, (1 - t) * 14), child: child),
+    ),
+    child: child,
+  );
 
   String _ageBandLabel(String value) => switch (value) {
     'under20' => '20세 미만', '20s' => '20대', '30s' => '30대', '40plus' => '40세 이상', _ => '',
