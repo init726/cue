@@ -26,7 +26,11 @@ if (process.env.CUE_CLOUD_REQUIRED === '1' &&
 }
 const rate = new Map();
 const discoveryJobs = new Map();
-const fallbackTopics = ['기술', '음악', '공연', '강연', '워크숍', '스포츠'];
+// 탭이 비었을 때 앞에서부터 동시에 찾는다. 검색 범위가 넓어 결과가 잘 나오는 주제를 앞에 둔다.
+// 음악·공연은 공식 예매처로만 좁혀 찾으므로 뒤에 둔다.
+const fallbackTopics = ['강연', '지역 축제', '기술', '워크숍', '공연', '음악', '스포츠'];
+// 앱은 100초에 요청을 끊는다. 그 전에 응답하고, 덜 끝난 검색은 뒤에서 마저 저장해 다음 새로고침에 보여준다.
+const emptyTabWaitMs = 75 * 1000;
 
 // parallel개 주제를 한꺼번에 찾는다. 추천이 비어 있을 때는 여러 주제를 동시에 찾아 기다리는 시간을 줄인다.
 async function discoverFor(data, userId, { parallel = 1 } = {}) {
@@ -444,7 +448,9 @@ export const server = http.createServer(async (req, res) => {
       if (demo) return send(res, 200, { events: publicEvents(events) });
       if (!events.length && user.supabase) {
         try {
-          await discoverFor(data, user.id, { parallel: 3 });
+          const search = discoverFor(data, user.id, { parallel: 3 });
+          search.catch(() => {});
+          await Promise.race([search, new Promise((resolve) => setTimeout(resolve, emptyTabWaitMs).unref())]);
           events = await data.recommendations(user.id, options);
         } catch (error) {
           console.error('Event discovery:', error instanceof Error ? error.message : error);

@@ -143,7 +143,8 @@ export async function discoverEvents(topic, { fetchImpl = fetch, currentTime = D
 
       text: { format: { type: 'json_schema', name: 'event_discovery', strict: true, schema } },
     }),
-    signal: AbortSignal.timeout(90000),
+    // 추론 모델이 검색을 여러 번 이어 가 90초를 넘기기도 한다.
+    signal: AbortSignal.timeout(150000),
   });
   if (!response.ok) {
     console.error('OpenAI discovery status:', response.status);
