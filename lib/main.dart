@@ -18,6 +18,7 @@ import 'cue_colors.dart';
 import 'cue_event_identity.dart';
 import 'cue_categories.dart';
 import 'cue_location.dart';
+import 'cue_logo.dart';
 import 'cue_map_launcher.dart';
 import 'cue_map_page.dart';
 import 'cue_period.dart';
@@ -1929,29 +1930,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   }
   Widget _header() => Padding(
     padding: EdgeInsets.fromLTRB(22, 14, 22, 8),
-    child: Row(
-      children: [
-        Container(
-          width: 35,
-          height: 35,
-          decoration: BoxDecoration(
-            color: colors.accent,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(Icons.camera_alt_rounded, color: colors.onAccent, size: 19),
-        ),
-        SizedBox(width: 11),
-        Text(
-          'cue',
-          style: TextStyle(
-            fontSize: 25,
-            fontWeight: FontWeight.w900,
-            color: ink,
-            letterSpacing: -1.5,
-          ),
-        ),
-      ],
-    ),
+    child: Row(children: [CueLogo(size: 28)]),
   );
 
   // 시작은 서버 연결 없이 바로 한다. 온보딩에서 고른 추천 설정은 서버에 연결될 때 반영한다.

@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 /// Cue의 색을 한 곳에서 정한다. 화면 코드는 색 값 대신 역할(ink, accent, …)만 쓴다.
 ///
-/// 방향: 코발트 블루 한 가지를 정체성으로 쓴다. 회색은 파랑에 맞춰 살짝 차갑게 두고,
-/// 큰 카드(촬영·다음 일정)에만 같은 계열의 아주 옅은 그라데이션으로 깊이를 준다.
-/// 다크 모드는 남색에 가까운 바탕에 조금 밝힌 코발트를 쓴다.
+/// 방향: 인디고에서 바이올렛으로 이어지는 색을 정체성으로 쓴다(로고의 반짝임과 같은 색).
+/// 회색은 보라 쪽으로 아주 살짝 기울인 라벤더 톤으로 두고, 큰 카드(촬영·다음 일정)에만
+/// 인디고→바이올렛 그라데이션을 쓴다. 다크 모드는 남보라 바탕에 조금 밝힌 보라를 쓴다.
 class CueColors {
   const CueColors._({
     required this.dark,
@@ -68,11 +68,11 @@ class CueColors {
   final Color heroEnd;
   final Color heroMuted;
 
-  /// 큰 카드 위의 주 버튼(흰 버튼에 파란 글자).
+  /// 큰 카드 위의 주 버튼(흰 버튼에 보라 글자).
   final Color heroAction;
   final Color onHeroAction;
 
-  /// 큰 카드의 바탕. 왼쪽 위에서 오른쪽 아래로 같은 파랑을 한 단계만 짙게 한다.
+  /// 큰 카드의 바탕. 왼쪽 위 인디고에서 오른쪽 아래 바이올렛으로 넘어간다.
   LinearGradient get heroGradient => LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
@@ -91,23 +91,23 @@ class CueColors {
 
   static const light = CueColors._(
     dark: false,
-    background: Color(0xFFF3F5F8),
+    background: Color(0xFFF6F5FC),
     surface: Color(0xFFFFFFFF),
-    surfaceMuted: Color(0xFFF1F4F8),
-    border: Color(0xFFE3E8EF),
-    ink: Color(0xFF131A26),
-    muted: Color(0xFF5E6A7A),
-    primary: Color(0xFF2F5BEA),
+    surfaceMuted: Color(0xFFF2F1FA),
+    border: Color(0xFFE6E4F2),
+    ink: Color(0xFF17162B),
+    muted: Color(0xFF615F78),
+    primary: Color(0xFF6C5CF5),
     onPrimary: Color(0xFFFFFFFF),
-    accent: Color(0xFF2F5BEA),
-    accentText: Color(0xFF2449CC),
+    accent: Color(0xFF6C5CF5),
+    accentText: Color(0xFF4F3FD9),
     onAccent: Color(0xFFFFFFFF),
-    tint: Color(0xFFEAF0FF),
-    hero: Color(0xFF3966F2),
-    heroEnd: Color(0xFF2448D6),
-    heroMuted: Color(0xFFD7E1FF),
+    tint: Color(0xFFEFECFF),
+    hero: Color(0xFF4B58E0),
+    heroEnd: Color(0xFF7445E0),
+    heroMuted: Color(0xFFE8E5FF),
     heroAction: Color(0xFFFFFFFF),
-    onHeroAction: Color(0xFF2449CC),
+    onHeroAction: Color(0xFF4F3FD9),
     success: Color(0xFF1E8A57),
     successTint: Color(0xFFE5F5EC),
     warn: Color(0xFFA86400),
@@ -118,23 +118,23 @@ class CueColors {
 
   static const darkColors = CueColors._(
     dark: true,
-    background: Color(0xFF0C1016),
-    surface: Color(0xFF151A23),
-    surfaceMuted: Color(0xFF1D2330),
-    border: Color(0xFF283041),
-    ink: Color(0xFFEEF2F8),
-    muted: Color(0xFF9AA4B4),
-    primary: Color(0xFF4A72FF),
+    background: Color(0xFF0E0D18),
+    surface: Color(0xFF17162A),
+    surfaceMuted: Color(0xFF201E36),
+    border: Color(0xFF2D2A48),
+    ink: Color(0xFFEFEEF8),
+    muted: Color(0xFFA3A1BC),
+    primary: Color(0xFF6455E8),
     onPrimary: Color(0xFFFFFFFF),
-    accent: Color(0xFF6E8FFF),
-    accentText: Color(0xFF8EA7FF),
-    onAccent: Color(0xFF0B1020),
-    tint: Color(0xFF1B2646),
-    hero: Color(0xFF2A44A8),
-    heroEnd: Color(0xFF1B2C74),
-    heroMuted: Color(0xFFB9C6EE),
+    accent: Color(0xFF9787FF),
+    accentText: Color(0xFFADA0FF),
+    onAccent: Color(0xFF120F2A),
+    tint: Color(0xFF24204A),
+    hero: Color(0xFF3E3A9E),
+    heroEnd: Color(0xFF5A2F9C),
+    heroMuted: Color(0xFFD9D3FA),
     heroAction: Color(0xFFFFFFFF),
-    onHeroAction: Color(0xFF2449CC),
+    onHeroAction: Color(0xFF4F3FD9),
     success: Color(0xFF5ED39A),
     successTint: Color(0xFF14291F),
     warn: Color(0xFFF5B94E),
