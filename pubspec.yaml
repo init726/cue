@@ -68,6 +68,19 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # 앱 전체 글꼴(나눔스퀘어라운드, OFL-1.1). assets/fonts/README.md 참고.
+  fonts:
+    - family: NanumSquareRound
+      fonts:
+        - asset: assets/fonts/NanumSquareRoundL.ttf
+          weight: 300
+        - asset: assets/fonts/NanumSquareRoundR.ttf
+          weight: 400
+        - asset: assets/fonts/NanumSquareRoundB.ttf
+          weight: 700
+        - asset: assets/fonts/NanumSquareRoundEB.ttf
+          weight: 800
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

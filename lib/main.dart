@@ -49,6 +49,8 @@ ThemeData cueTheme(Brightness brightness) {
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
+    // 둥근 글꼴로 부드러운 인상을 준다. 굵기 500·600은 가까운 400·700으로 맞춰진다.
+    fontFamily: 'NanumSquareRound',
     scaffoldBackgroundColor: background,
     colorScheme: ColorScheme.fromSeed(
       seedColor: c.accent,
