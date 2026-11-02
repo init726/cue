@@ -1,36 +1,51 @@
 import 'package:cue/main.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('first launch asks one choice and starts without the server', (tester) async {
+  testWidgets('first launch opens the main screen and asks age and interests on the first recommendation visit', (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(const CueApp());
     expect(find.text('사진 한 장에서 시작되는 일정'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1200));
-    expect(find.text('Cue 시작하기'), findsOneWidget);
-    expect(find.text('사용 방법'), findsOneWidget);
-    expect(find.text('관심사 기반 행사 추천'), findsOneWidget);
-    // 테마·알림·일정 길이는 설정으로 옮겨 첫 화면에서 고르지 않는다.
-    expect(find.text('기본 알림'), findsNothing);
-    expect(find.text('종료 시간이 없는 일정'), findsNothing);
-    expect(find.text('포스터 촬영하기'), findsNothing);
-    // 관심 분야를 고르면 서버에 연결될 때 함께 저장하도록 남겨 둔다.
-    expect(find.text('관심 있는 분야'), findsOneWidget);
-    for (final topic in ['영화', '음악']) {
-      await tester.ensureVisible(find.text(topic));
-      await tester.tap(find.text(topic));
-      await tester.pump();
+    // 설명 화면 없이 바로 메인으로 들어가고, 서버가 없어도 막히지 않는다.
+    expect(find.text('Cue 시작하기'), findsNothing);
+    expect(find.text('포스터 촬영하기'), findsOneWidget);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('cue_onboarding_completed'), isTrue);
+    expect(prefs.getBool('cue_onboarding_synced'), isFalse);
+
+    // 추천 탭을 처음 열면 튜토리얼이 한 번 뜬다.
+    await tester.tap(find.text('추천').last);
+    for (var i = 0; i < 12; i += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
     }
-    // 테스트 환경에는 서버가 없지만 시작은 막히지 않아야 한다.
-    await tester.ensureVisible(find.text('시작하기'));
-    await tester.tap(find.text('시작하기'));
+    expect(find.text('맞춤 추천을 시작해 볼까요?'), findsOneWidget);
+    await tester.tap(find.text('20대'));
+    await tester.pump();
+    await tester.tap(find.text('다음'));
     for (var i = 0; i < 5; i += 1) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(find.text('포스터 촬영하기'), findsOneWidget);
-    expect((await SharedPreferences.getInstance()).getBool('cue_onboarding_synced'), isFalse);
-    expect((await SharedPreferences.getInstance()).getStringList('cue_onboarding_topics'), unorderedEquals(['영화', '음악']));
+    expect(find.text('어떤 행사를 좋아하세요?'), findsOneWidget);
+    for (final topic in ['영화', '음악']) {
+      await tester.ensureVisible(find.text(topic).last);
+      await tester.tap(find.text(topic).last);
+      await tester.pump();
+    }
+    await tester.ensureVisible(find.text('추천 받기'));
+    await tester.tap(find.text('추천 받기'));
+    for (var i = 0; i < 6; i += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('어떤 행사를 좋아하세요?'), findsNothing);
+    expect(prefs.getBool('cue_recommend_tutorial_seen'), isTrue);
+    expect(prefs.getString('cue_onboarding_age_band'), '20s');
+    expect(prefs.getStringList('cue_onboarding_topics'), unorderedEquals(['영화', '음악']));
   });
 
   testWidgets('home offers camera, gallery and documents side by side', (tester) async {

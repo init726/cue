@@ -262,6 +262,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   String selectedCategory = '기타';
   bool loading = true;
   bool onboardingCompleted = false;
+  bool recommendTutorialSeen = true;
   bool onboardingPreferencesDirty = false;
   bool saving = false;
   bool personalizationEnabled = true;
@@ -315,6 +316,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       tabDirection = value > tab ? 1 : -1;
       tab = value;
     });
+    if (value == 2 && !recommendTutorialSeen) {
+      // 탭 전환 애니메이션이 끝난 뒤에 띄운다.
+      Future.delayed(Duration(milliseconds: 360), () {
+        if (mounted && tab == 2) _recommendationTutorial();
+      });
+    }
   }
 
   @override
@@ -378,6 +385,18 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     };
     defaultReminderMinutes = prefs.getInt('default_reminder_minutes') ?? 60;
     onboardingCompleted = prefs.getBool('cue_onboarding_completed') ?? false;
+    if (!onboardingCompleted) {
+      // 첫 실행은 설명 화면 없이 바로 메인으로 들어간다. 추천은 켠 채로 시작하고,
+      // 연령대·관심 분야는 추천 탭을 처음 열 때 튜토리얼로 묻는다. 서버에는 연결될 때 반영한다.
+      await prefs.setBool('cue_onboarding_completed', true);
+      await prefs.setBool('cue_onboarding_recommendations', true);
+      await prefs.setString('cue_onboarding_region', '');
+      await prefs.setString('cue_onboarding_age_band', '');
+      await prefs.setStringList('cue_onboarding_topics', const []);
+      await prefs.setBool('cue_onboarding_synced', false);
+      onboardingCompleted = true;
+    }
+    recommendTutorialSeen = prefs.getBool('cue_recommend_tutorial_seen') ?? false;
     interestedIds = (prefs.getStringList('interested_events') ?? []).toSet();
     reminderMinutes = defaultReminderMinutes;
     defaultDurationMinutes = prefs.getInt('default_duration_minutes') ?? 120;
@@ -1823,21 +1842,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (loading) return CueSplash();
-    if (!onboardingCompleted) {
-      return Scaffold(
-        body: SafeArea(
-          child: Column(children: [
-            _header(),
-            if (apiError != null)
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: _notice(apiError!, onTap: _refresh, detail: apiErrorDetail),
-              ),
-            Expanded(child: _scroll(_onboarding())),
-          ]),
-        ),
-      );
-    }
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -1947,20 +1951,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     child: Row(children: [CueLogo(size: 28)]),
   );
 
-  // 시작은 서버 연결 없이 바로 한다. 온보딩에서 고른 추천 설정은 서버에 연결될 때 반영한다.
-  Future<void> _finishOnboarding() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('cue_onboarding_completed', true);
-    await prefs.setBool('cue_onboarding_recommendations', personalizationEnabled && recommendationEnabled);
-    await prefs.setString('cue_onboarding_region', communityRegion);
-    await prefs.setString('cue_onboarding_age_band', communityAgeBand);
-    await prefs.setStringList('cue_onboarding_topics', favoriteTopics.toList());
-    await prefs.setBool('cue_onboarding_synced', false);
-    if (!mounted) return;
-    setState(() => onboardingCompleted = true);
-    unawaited(_refresh());
-  }
-
   Future<void> _syncOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     // 키가 없으면 예전 버전에서 이미 서버에 저장한 사용자다.
@@ -1993,6 +1983,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           label: Text(topic),
           selected: selected.contains(topic),
           showCheckmark: false,
+          selectedColor: colors.accent,
+          side: BorderSide(color: selected.contains(topic) ? colors.accent : borderColor),
+          labelStyle: TextStyle(
+            color: selected.contains(topic) ? colors.onAccent : ink,
+            fontWeight: selected.contains(topic) ? FontWeight.w800 : FontWeight.w600,
+          ),
           onSelected: (on) {
             final next = {...selected};
             if (on && next.length < 10) next.add(topic);
@@ -2002,6 +1998,154 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
         ),
     ],
   );
+
+  // 추천 탭을 처음 열면 한 번만 띄운다. ① 연령대 ② 관심 분야를 고르고, 건너뛰어도 다시 띄우지 않는다.
+  // 고른 값은 설정의 학교·지역·연령대, 관심 분야와 같은 곳에 저장된다.
+  Future<void> _recommendationTutorial() async {
+    setState(() => recommendTutorialSeen = true);
+    unawaited(SharedPreferences.getInstance().then((prefs) => prefs.setBool('cue_recommend_tutorial_seen', true)));
+    // 예전에 이미 둘 다 정한 사용자에게는 묻지 않는다.
+    if (favoriteTopics.isNotEmpty && communityAgeBand.isNotEmpty) return;
+    var step = 0;
+    var ageBand = communityAgeBand;
+    var topics = {...favoriteTopics};
+    final result = await showModalBottomSheet<(String, Set<String>)>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      sheetAnimationStyle: AnimationStyle(
+        duration: Duration(milliseconds: 420),
+        reverseDuration: Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      ),
+      builder: (sheetContext) => StatefulBuilder(builder: (context, setSheet) {
+        final pages = [
+          Column(key: ValueKey(0), crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 52, height: 52,
+              decoration: BoxDecoration(gradient: colors.heroGradient, shape: BoxShape.circle),
+              child: Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 26),
+            ),
+            SizedBox(height: 16),
+            Text('맞춤 추천을 시작해 볼까요?', style: TextStyle(color: ink, fontSize: 22, fontWeight: FontWeight.w800)),
+            SizedBox(height: 6),
+            Text('연령대를 알려 주시면 또래가 저장한 행사를 먼저 보여드려요.',
+                style: TextStyle(color: muted, height: 1.45)),
+            SizedBox(height: 18),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final value in ['under20', '20s', '30s', '40plus', ''])
+                ChoiceChip(
+                  label: Text(value.isEmpty ? '선택 안 함' : _ageBandLabel(value)),
+                  selected: ageBand == value,
+                  showCheckmark: false,
+                  selectedColor: colors.accent,
+                  side: BorderSide(color: ageBand == value ? colors.accent : borderColor),
+                  labelStyle: TextStyle(
+                    color: ageBand == value ? colors.onAccent : ink,
+                    fontWeight: ageBand == value ? FontWeight.w800 : FontWeight.w600,
+                  ),
+                  onSelected: (_) => setSheet(() => ageBand = value),
+                ),
+            ]),
+            SizedBox(height: 10),
+            Text('생년월일은 받지 않고 연령대만 추천에 써요.', style: TextStyle(color: muted, fontSize: 12)),
+          ]),
+          Column(key: ValueKey(1), crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('어떤 행사를 좋아하세요?', style: TextStyle(color: ink, fontSize: 22, fontWeight: FontWeight.w800)),
+            SizedBox(height: 6),
+            Text('3개 이상 고르면 바로 맞춤 추천을 받아요. 최대 10개까지 고를 수 있어요.',
+                style: TextStyle(color: muted, height: 1.45)),
+            SizedBox(height: 16),
+            _topicChips(topics, (next) => setSheet(() => topics = next)),
+          ]),
+        ];
+        return SafeArea(child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(22, 14, 22, 18),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              // 진행 표시: 지금 단계의 막대가 길어진다.
+              for (var i = 0; i < pages.length; i++)
+                AnimatedContainer(
+                  duration: Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  margin: EdgeInsets.only(right: 6),
+                  width: i == step ? 26 : 8, height: 8,
+                  decoration: BoxDecoration(
+                    color: i <= step ? colors.accent : colors.border,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              Spacer(),
+              TextButton(
+                onPressed: () => Navigator.pop(sheetContext),
+                style: TextButton.styleFrom(foregroundColor: muted),
+                child: Text('건너뛰기'),
+              ),
+            ]),
+            SizedBox(height: 8),
+            // 단계가 바뀌면 높이를 부드럽게 맞추고, 새 단계는 진행 방향에서 들어오고 이전 단계는 반대쪽으로 빠진다.
+            AnimatedSize(
+              duration: Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: AnimatedSwitcher(
+                duration: Duration(milliseconds: 320),
+                reverseDuration: Duration(milliseconds: 160),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                layoutBuilder: (current, previous) => Stack(alignment: Alignment.topLeft, children: [...previous, ?current]),
+                transitionBuilder: (child, animation) {
+                  final incoming = child.key == ValueKey(step);
+                  final side = (incoming ? 1 : -1) * (step == 1 ? 0.12 : -0.12);
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(begin: Offset(side, 0), end: Offset.zero).animate(animation),
+                      child: child,
+                    ),
+                  );
+                },
+                child: pages[step],
+              ),
+            ),
+            SizedBox(height: 22),
+            FilledButton(
+              onPressed: step == 0
+                  ? () => setSheet(() => step = 1)
+                  : () => Navigator.pop(sheetContext, (ageBand, topics)),
+              style: FilledButton.styleFrom(
+                backgroundColor: colors.primary,
+                foregroundColor: colors.onPrimary,
+                minimumSize: Size.fromHeight(52),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                textStyle: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+              ),
+              child: Text(step == 0 ? '다음' : '추천 받기'),
+            ),
+            if (step == 1)
+              TextButton(
+                onPressed: () => setSheet(() => step = 0),
+                style: TextButton.styleFrom(minimumSize: Size.fromHeight(44), foregroundColor: muted),
+                child: Text('이전'),
+              ),
+          ]),
+        ));
+      }),
+    );
+    if (result == null || !mounted) return;
+    final (chosenAge, chosenTopics) = result;
+    // 첫 실행 기본값이 아직 서버에 안 갔다면, 나중에 보낼 때 이 값으로 보낸다.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cue_onboarding_age_band', chosenAge);
+    await prefs.setStringList('cue_onboarding_topics', chosenTopics.toList());
+    if (!mounted) return;
+    setState(() {
+      communityAgeBand = chosenAge;
+      favoriteTopics = chosenTopics;
+    });
+    await _updateProfile({'ageBand': chosenAge, 'favoriteTopics': chosenTopics.toList()});
+  }
 
   // 추천 탭·설정에서 관심 분야를 고친다. 저장하면 바로 추천을 다시 불러온다.
   Future<void> _editTopics() async {
@@ -2027,99 +2171,6 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     setState(() => favoriteTopics = result);
     await _updateProfile({'favoriteTopics': result.toList()});
   }
-
-  Widget _onboardingStep(String number, String title, String detail) =>
-      Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(number, style: TextStyle(color: accent, fontWeight: FontWeight.w800)),
-            SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: TextStyle(color: ink, fontWeight: FontWeight.w700)),
-                  Text(detail, style: TextStyle(color: muted, fontSize: 13)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _onboarding() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      SizedBox(height: 10),
-      Text('Cue 시작하기', style: TextStyle(color: ink, fontSize: 30, fontWeight: FontWeight.w800)),
-      SizedBox(height: 8),
-      Text('포스터 한 장이면 캘린더 일정이 돼요.',
-        style: TextStyle(color: muted, height: 1.5)),
-      SizedBox(height: 24),
-      _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _eyebrow('사용 방법'),
-        SizedBox(height: 10),
-        _onboardingStep('1', '포스터나 공지문을 골라요', '촬영하거나 사진첩, PDF·한글 파일에서 고를 수 있어요.'),
-        _onboardingStep('2', '일정 정보를 자동으로 읽어요', '시간과 장소를 확인하고 필요한 내용은 고쳐 주세요.'),
-        _onboardingStep('3', '캘린더에 저장해요', '저장 버튼을 누른 일정만 캘린더에 추가돼요.'),
-      ])),
-      SizedBox(height: 14),
-      _card(SwitchListTile.adaptive(
-        contentPadding: EdgeInsets.zero,
-        title: Text('관심사 기반 행사 추천'),
-        subtitle: Text('저장한 일정과 선택 기록으로 맞는 행사를 찾아드려요.'),
-        value: personalizationEnabled && recommendationEnabled,
-        onChanged: (value) => setState(() {
-          onboardingPreferencesDirty = true;
-          personalizationEnabled = value;
-          recommendationEnabled = value;
-        }),
-      )),
-      SizedBox(height: 14),
-      _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _eyebrow('관심 있는 분야'),
-        SizedBox(height: 4),
-        Text('3개 이상 고르면 첫날부터 맞는 행사를 추천해요.', style: TextStyle(color: muted, fontSize: 13)),
-        SizedBox(height: 12),
-        _topicChips(favoriteTopics, (topics) => setState(() => favoriteTopics = topics)),
-      ])),
-      SizedBox(height: 14),
-      _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _eyebrow('선택 · 추천 환경'),
-        SizedBox(height: 10),
-        TextField(
-          decoration: InputDecoration(labelText: '주로 활동하는 지역', hintText: '예: 서울 성북구'),
-          onChanged: (value) => communityRegion = value.trim(),
-        ),
-        SizedBox(height: 10),
-        DropdownButtonFormField<String>(
-          initialValue: communityAgeBand,
-          decoration: InputDecoration(labelText: '연령대'),
-          items: ['', 'under20', '20s', '30s', '40plus'].map((value) => DropdownMenuItem(
-            value: value,
-            child: Text(value.isEmpty ? '선택 안 함' : _ageBandLabel(value)),
-          )).toList(),
-          onChanged: (value) => setState(() => communityAgeBand = value ?? ''),
-        ),
-        SizedBox(height: 8),
-        Text(
-          '정확한 생년월일이나 현재 위치는 저장하지 않아요. 지역의 대략적인 중심점과 연령대만 추천에 사용해요.',
-          style: TextStyle(color: muted, fontSize: 12, height: 1.45),
-        ),
-      ])),
-      SizedBox(height: 14),
-      Text(
-        '로그인 없이 바로 시작해요. 사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 OpenAI로 전송돼요. '
-        '앱을 지우면 Cue 기록은 되찾을 수 없지만 캘린더에 저장한 일정은 남아요. '
-        '테마, 알림, 저장할 캘린더는 설정에서 바꿀 수 있어요.',
-        style: TextStyle(color: muted, fontSize: 13, height: 1.5),
-      ),
-      SizedBox(height: 20),
-      _button('시작하기', Icons.arrow_forward, _finishOnboarding),
-    ],
-  );
 
   Widget _home() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
