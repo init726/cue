@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cue · 포스터에서 일정까지</title>
+<meta name="description" content="행사 포스터·공지·문서를 AI가 읽어 일정 후보를 만들고, 확인한 일정만 캘린더에 저장하는 iOS 앱 Cue.">
+<link rel="icon" href="img/icon.png">
+<style>
+  @font-face { font-family: "NanumSquareRound"; font-weight: 400; src: url("fonts/NanumSquareRoundR.woff2") format("woff2"); font-display: swap; }
+  @font-face { font-family: "NanumSquareRound"; font-weight: 700; src: url("fonts/NanumSquareRoundB.woff2") format("woff2"); font-display: swap; }
+  @font-face { font-family: "NanumSquareRound"; font-weight: 800; src: url("fonts/NanumSquareRoundEB.woff2") format("woff2"); font-display: swap; }
+
+  :root {
+    --bg: #F6F5FC;
+    --bg-soft: #EFECFF;
+    --surface: #FFFFFF;
+    --border: #E6E4F2;
+    --ink: #17162B;
+    --muted: #615F78;
+    --accent: #6C5CF5;
+    --accent-text: #4F3FD9;
+    --from: #4B58E0;
+    --to: #7445E0;
+    --shadow: 0 24px 60px -24px rgba(60, 40, 160, .28), 0 6px 18px -8px rgba(23, 22, 43, .12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0E0D18; --bg-soft: #1B1834; --surface: #17162A; --border: #2D2A48;
+      --ink: #EFEEF8; --muted: #A3A1BC; --accent: #9787FF; --accent-text: #ADA0FF;
+      --shadow: 0 24px 60px -24px rgba(0, 0, 0, .6), 0 6px 18px -8px rgba(0, 0, 0, .4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0E0D18; --bg-soft: #1B1834; --surface: #17162A; --border: #2D2A48;
+    --ink: #EFEEF8; --muted: #A3A1BC; --accent: #9787FF; --accent-text: #ADA0FF;
+    --shadow: 0 24px 60px -24px rgba(0, 0, 0, .6), 0 6px 18px -8px rgba(0, 0, 0, .4);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "NanumSquareRound", -apple-system, "Apple SD Gothic Neo", sans-serif;
+    line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+    word-break: keep-all; overflow-wrap: anywhere;
+  }
+  a { color: inherit; text-decoration: none; }
+  img { display: block; max-width: 100%; }
+  .wrap { width: min(1120px, 100% - 32px); margin: 0 auto; }
+  .grad { background: linear-gradient(100deg, var(--from), var(--to)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  /* 상단 */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: saturate(160%) blur(14px); -webkit-backdrop-filter: saturate(160%) blur(14px);
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  }
+  .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .logo { display: inline-flex; align-items: center; gap: 1px; font-weight: 800; font-size: 26px; letter-spacing: -1px; }
+  .logo svg { width: 22px; height: 22px; margin-right: 1px; }
+  .nav nav { display: flex; gap: 28px; font-size: 15px; color: var(--muted); font-weight: 700; }
+  .nav nav a:hover { color: var(--ink); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; border-radius: 14px; padding: 12px 20px;
+    font-weight: 800; font-size: 15px; transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+  }
+  .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 10px 24px -10px var(--accent); }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 16px 30px -12px var(--accent); }
+  .btn-ghost { background: var(--surface); border: 1px solid var(--border); }
+  .btn-ghost:hover { transform: translateY(-2px); }
+  .nav .btn { padding: 9px 16px; font-size: 14px; }
+
+  /* 히어로 */
+  .hero { position: relative; padding: 72px 0 40px; text-align: center; }
+  .hero::before {
+    content: ""; position: absolute; inset: -120px -20% auto; height: 620px; z-index: -1;
+    background:
+      radial-gradient(40% 50% at 25% 40%, color-mix(in srgb, var(--from) 22%, transparent), transparent 70%),
+      radial-gradient(40% 50% at 78% 30%, color-mix(in srgb, var(--to) 20%, transparent), transparent 70%);
+    filter: blur(10px);
+  }
+  .hero-logo { display: inline-flex; align-items: center; font-weight: 800; font-size: clamp(64px, 11vw, 112px); letter-spacing: -4px; line-height: 1; }
+  .hero-logo svg { width: .74em; height: .74em; margin-right: .02em; }
+  .hero h1 { margin: 22px 0 10px; font-size: clamp(34px, 6vw, 60px); line-height: 1.15; letter-spacing: -1.5px; font-weight: 800; }
+  .hero p.lead { margin: 0 auto; max-width: 620px; font-size: clamp(16px, 2.2vw, 20px); color: var(--muted); }
+  .cta { display: flex; justify-content: center; gap: 12px; margin-top: 30px; flex-wrap: wrap; }
+
+  .stage { position: relative; margin: 56px auto 0; height: 640px; max-width: 980px; }
+  .phone {
+    position: absolute; left: 50%; top: 0; transform: translateX(-50%);
+    width: 300px; padding: 10px; border-radius: 50px; background: #111019;
+    box-shadow: var(--shadow), inset 0 0 0 2px #2b2940;
+  }
+  .phone img { border-radius: 40px; aspect-ratio: 1206 / 2622; object-fit: cover; width: 100%; }
+  .float {
+    position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: 22px;
+    box-shadow: var(--shadow); padding: 18px; text-align: left;
+    animation: bob 6s ease-in-out infinite;
+  }
+  @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  .poster {
+    left: 2%; top: 70px; width: 230px; padding: 0; overflow: hidden; rotate: -6deg; animation-delay: -1s;
+  }
+  .poster .art {
+    height: 260px; padding: 20px; color: #fff; display: flex; flex-direction: column; justify-content: space-between;
+    background: linear-gradient(160deg, #3a3f9e 0%, #6a3fb5 55%, #e38bb1 100%);
+  }
+  .poster .art small { font-weight: 700; letter-spacing: 1px; opacity: .9; }
+  .poster .art b { font-size: 30px; line-height: 1.05; letter-spacing: -1px; }
+  .poster .art span { font-size: 13px; opacity: .92; }
+  .chip-ai {
+    position: absolute; left: 24%; top: 250px; z-index: 3; display: inline-flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 10px 16px;
+    box-shadow: var(--shadow); font-weight: 800; color: var(--accent-text); animation: bob 5s ease-in-out infinite; animation-delay: -2s;
+  }
+  .cal { right: 2%; top: 120px; width: 250px; animation-delay: -3s; }
+  .cal .day { font-size: 13px; color: var(--muted); font-weight: 700; }
+  .cal .item { margin-top: 12px; padding: 10px 12px; border-radius: 14px; border-left: 4px solid var(--accent); background: var(--bg-soft); }
+  .cal .item b { display: block; font-size: 15px; }
+  .cal .item span { font-size: 13px; color: var(--muted); }
+  .cal .item.dim { border-left-color: var(--border); background: transparent; }
+
+  /* 공통 섹션 */
+  section { padding: 96px 0; }
+  .eyebrow { display: inline-block; font-size: 13px; font-weight: 800; letter-spacing: .5px; color: var(--accent-text); background: var(--bg-soft); padding: 6px 12px; border-radius: 999px; }
+  h2 { font-size: clamp(28px, 4.2vw, 42px); line-height: 1.2; letter-spacing: -1px; margin: 16px 0 12px; font-weight: 800; }
+  .sub { color: var(--muted); font-size: 17px; max-width: 620px; margin: 0; }
+  .center { text-align: center; }
+  .center .sub { margin: 0 auto; }
+
+  /* 흐름 */
+  .steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: 44px; }
+  .step {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 22px; padding: 24px 18px; text-align: center;
+    transition: transform .25s ease, box-shadow .25s ease;
+  }
+  .step:hover { transform: translateY(-4px); box-shadow: var(--shadow); }
+  .step .ic {
+    width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--bg-soft); color: var(--accent-text);
+  }
+  .step .ic svg { width: 26px; height: 26px; }
+  .step b { display: block; font-size: 17px; }
+  .step span { font-size: 14px; color: var(--muted); }
+  .step .n { font-size: 12px; font-weight: 800; color: var(--accent-text); letter-spacing: 1px; }
+
+  /* 기능 행 */
+  .row { display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; }
+  .row.flip .shots { order: -1; }
+  .list { list-style: none; padding: 0; margin: 28px 0 0; display: grid; gap: 14px; }
+  .list li { display: flex; gap: 14px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 18px; }
+  .list .dot { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, var(--from), var(--to)); color: #fff; }
+  .list .dot svg { width: 17px; height: 17px; }
+  .list b { display: block; font-size: 16px; }
+  .list span { color: var(--muted); font-size: 14.5px; }
+  .shots { display: flex; justify-content: center; gap: 18px; }
+  .shot { width: 240px; padding: 8px; border-radius: 40px; background: #111019; box-shadow: var(--shadow); }
+  .shot img { border-radius: 32px; width: 100%; }
+  .shot.raise { transform: translateY(-28px); }
+
+  /* 신뢰 */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 40px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 22px; padding: 26px; }
+  .card b { display: block; font-size: 18px; margin-bottom: 6px; }
+  .card span { color: var(--muted); font-size: 15px; }
+
+  .stack { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 28px; }
+  .stack span { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 9px 16px; font-weight: 700; font-size: 14px; }
+
+  .final {
+    border-radius: 32px; padding: 64px 28px; text-align: center; color: #fff;
+    background: linear-gradient(120deg, var(--from), var(--to));
+    box-shadow: 0 30px 70px -30px rgba(90, 60, 220, .6);
+  }
+  .final h2 { color: #fff; }
+  .final p { color: rgba(255, 255, 255, .86); margin: 0 auto; max-width: 520px; }
+  .final .btn { background: #fff; color: #4F3FD9; margin-top: 26px; }
+
+  footer { padding: 40px 0 56px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  /* 스크롤 등장 */
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s cubic-bezier(.2, .7, .2, 1); }
+  .reveal.in { opacity: 1; transform: none; }
+  /* 첫 화면은 스크롤과 상관없이 불러오자마자 차례로 떠오른다. */
+  .rise { animation: rise .9s cubic-bezier(.2, .7, .2, 1) both; animation-delay: var(--d, 0ms); }
+  @keyframes rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .rise { animation: none; }
+    .reveal { opacity: 1; transform: none; transition: none; }
+    .float, .chip-ai { animation: none; }
+  }
+
+  /* 화면 폭 */
+  @media (max-width: 960px) {
+    .steps { grid-template-columns: repeat(2, 1fr); }
+    .steps .step:last-child { grid-column: span 2; }
+    .row, .row.flip { grid-template-columns: 1fr; gap: 40px; }
+    .row.flip .shots { order: 0; }
+    .cards { grid-template-columns: 1fr; }
+    .poster { left: 0; width: 190px; }
+    .poster .art { height: 220px; }
+    .cal { right: 0; width: 210px; }
+  }
+  @media (max-width: 720px) {
+    .nav nav { display: none; }
+    .stage { height: auto; margin-top: 40px; }
+    .phone { position: relative; left: auto; transform: none; margin: 0 auto; width: min(280px, 78vw); }
+    .float, .chip-ai { display: none; }
+    section { padding: 72px 0; }
+    .shot { width: min(46vw, 220px); }
+    .shot.raise { transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="spark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4B58E0"/><stop offset="1" stop-color="#7445E0"/>
+    </linearGradient>
+    <!-- C 고리와 네 갈래 반짝임 (앱 아이콘과 같은 비율) -->
+    <symbol id="mark" viewBox="0 0 100 100">
+      <path d="M78.3 21.7 A40.6 40.6 0 1 0 78.3 78.3" fill="none" stroke="currentColor" stroke-width="25" stroke-linecap="round"/>
+      <path d="M53 30 Q56.2 46.8 73 50 Q56.2 53.2 53 70 Q49.8 53.2 33 50 Q49.8 46.8 53 30Z" fill="url(#spark)"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header>
+  <div class="wrap nav">
+    <a class="logo" href="#top" aria-label="Cue 홈"><svg><use href="#mark"/></svg>ue</a>
+    <nav>
+      <a href="#how">작동 방식</a>
+      <a href="#features">기능</a>
+      <a href="#recommend">추천</a>
+      <a href="#privacy">개인정보</a>
+    </nav>
+    <a class="btn btn-primary" href="https://github.com/init726/cue">GitHub</a>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <div class="hero-logo rise" style="--d:0ms" aria-label="Cue"><svg><use href="#mark"/></svg>ue</div>
+    <h1 class="rise" style="--d:90ms">포스터에서 <span class="grad">일정까지</span></h1>
+    <p class="lead rise" style="--d:180ms">AI가 행사 정보를 이해하고, 실제 일정으로 연결하는 개인 일정 에이전트</p>
+    <div class="cta rise" style="--d:260ms">
+      <a class="btn btn-primary" href="#how">어떻게 동작하나요?</a>
+      <a class="btn btn-ghost" href="https://github.com/init726/cue">소스 코드 보기</a>
+    </div>
+
+    <div class="stage rise" style="--d:360ms" aria-hidden="true">
+      <div class="float poster">
+        <div class="art">
+          <small>2026 SEOUL</small>
+          <b>MUSIC<br>FESTIVAL</b>
+          <span>11.21 (토) – 11.22 (일)<br>올림픽공원 88잔디마당</span>
+        </div>
+      </div>
+      <div class="chip-ai">
+        <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z" fill="url(#spark)"/></svg>
+        AI 분석
+      </div>
+      <div class="phone"><img src="img/scan.png" alt="Cue 스캔 화면"></div>
+      <div class="float cal">
+        <div class="day">11월 21일 토요일</div>
+        <div class="item"><b>서울 뮤직 페스티벌</b><span>12:00 – 22:00 · 올림픽공원</span></div>
+        <div class="item dim"><b>점심 약속</b><span>12:30 – 13:30 · 카페</span></div>
+        <div class="item dim"><b>스터디 모임</b><span>18:00 – 20:00 · 홍대</span></div>
+      </div>
+    </div>
+  </div>
+
+  <section id="how">
+    <div class="wrap center">
+      <span class="eyebrow reveal">작동 방식</span>
+      <h2 class="reveal">사진 한 장이면 충분해요</h2>
+      <p class="sub reveal">포스터·공지·문서를 고르면 행사인지부터 확인하고, 확인한 일정만 캘린더에 들어가요.</p>
+      <div class="steps">
+        <div class="step reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.5"/></svg></div><div class="n">STEP 1</div><b>AI 행사 판별</b><span>포스터·공지 인식</span></div>
+        <div class="step reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div><div class="n">STEP 2</div><b>일정 자동 추출</b><span>날짜·시간·장소</span></div>
+        <div class="step reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></div><div class="n">STEP 3</div><b>사용자 확인</b><span>후보 선택·수정</span></div>
+        <div class="step reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M12 13v5M9.5 15.5h5"/></svg></div><div class="n">STEP 4</div><b>캘린더 저장</b><span>알림까지 한 번에</span></div>
+        <div class="step reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/></svg></div><div class="n">STEP 5</div><b>맞춤 추천</b><span>행동 기반 개인화</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap row">
+      <div>
+        <span class="eyebrow reveal">일정 만들기</span>
+        <h2 class="reveal">복잡한 안내문도<br>정확한 일정으로</h2>
+        <p class="sub reveal">AI가 읽은 내용은 저장 전에 모두 확인하고 고칠 수 있어요. 저장 버튼을 누른 일정만 캘린더에 들어가요.</p>
+        <ul class="list">
+          <li class="reveal"><div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></div><div><b>사진, PDF, 한글 파일 모두</b><span>촬영하거나 사진첩·PDF·HWP·HWPX에서 골라요. 행사 안내물이 아니면 더 분석하지 않아요.</span></div></li>
+          <li class="reveal"><div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></div><div><b>여러 회차는 후보로</b><span>날짜·시간·장소가 다른 회차를 나눠 보여주고, 가고 싶은 하나를 골라요.</span></div></li>
+          <li class="reveal"><div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><div><b>전시·팝업 같은 기간형 행사</b><span>운영 시간과 휴관일을 읽어 실제로 갈 수 있는 날과 시간을 정하게 도와줘요.</span></div></li>
+          <li class="reveal"><div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></div><div><b>지도·날씨·길찾기</b><span>다음 일정의 장소를 앱 안 지도로 보고, 그 시간 날씨와 도보·차량 경로를 확인해요.</span></div></li>
+        </ul>
+      </div>
+      <div class="shots">
+        <div class="shot reveal"><img src="img/scan.png" alt="스캔 화면"></div>
+        <div class="shot raise reveal"><img src="img/actions.png" alt="행사 더보기 시트"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="recommend">
+    <div class="wrap row flip">
+      <div>
+        <span class="eyebrow reveal">맞춤 추천</span>
+        <h2 class="reveal">저장할수록 나에게<br>맞는 행사가 보여요</h2>
+        <p class="sub reveal">추천 탭을 처음 열면 연령대와 관심 분야를 묻고, 그다음부터는 저장·관심 표시 같은 행동으로 취향을 배워요.</p>
+        <ul class="list">
+          <li class="reveal"><div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18"/></svg></div><div><b>이번 주 비어 있는 시간에</b><span>캘린더의 빈 시간에 열리는 행사를 먼저 보여줘요. 일정 제목은 읽지 않아요.</span></div></li>
+          <li class="reveal"><div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/></svg></div><div><b>내 지역 행사·축제</b><span>활동 지역 가까이에서 열리는 행사와 축제를 모아요.</span></div></li>
+          <li class="reveal"><div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/></svg></div><div><b>관심 분야는 전국에서</b><span>한국관광공사 축제 정보와 공식 안내 페이지에서 찾은 행사를 함께 추천해요.</span></div></li>
+          <li class="reveal"><div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M15 20a4.5 4.5 0 0 1 7-3.7"/></svg></div><div><b>비슷한 사람들이 저장한 행사</b><span>같은 학교·연령대·지역의 여러 사람이 저장한 행사를 사람 수로만 알려줘요.</span></div></li>
+        </ul>
+      </div>
+      <div class="shots">
+        <div class="shot raise reveal"><img src="img/tutorial.png" alt="추천 튜토리얼"></div>
+        <div class="shot reveal"><img src="img/recommend.png" alt="추천 탭"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="privacy">
+    <div class="wrap center">
+      <span class="eyebrow reveal">개인정보</span>
+      <h2 class="reveal">필요한 만큼만 다뤄요</h2>
+      <p class="sub reveal">로그인 없이 익명 계정으로 바로 시작해요.</p>
+      <div class="cards">
+        <div class="card reveal"><b>사진은 남기지 않아요</b><span>사진과 문서는 행사 정보를 읽기 위해 서버를 거쳐 AI로 전달되고, 서버 디스크에 저장하지 않아요.</span></div>
+        <div class="card reveal"><b>정확한 위치는 저장하지 않아요</b><span>허용한 경우에만 대략적인 활동 지역을 쓰고, 생년월일 대신 연령대만 받아요.</span></div>
+        <div class="card reveal"><b>내 일정은 내 캘린더에</b><span>Cue 기록은 설정에서 언제든 지울 수 있고, 캘린더에 저장한 일정은 그대로 남아요.</span></div>
+      </div>
+      <div class="stack reveal">
+        <span>Flutter · iOS</span><span>Node.js API</span><span>Supabase</span><span>OpenAI</span><span>Kakao 로컬</span><span>한국관광공사 TourAPI</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="final reveal">
+        <h2>다음 행사, 포스터 한 장으로 시작하세요</h2>
+        <p>찍고, 확인하고, 저장하면 끝. 나머지는 Cue가 기억해요.</p>
+        <a class="btn" href="https://github.com/init726/cue">GitHub에서 보기</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Cue</span>
+    <span>글꼴: 나눔스퀘어라운드 (NAVER, OFL-1.1)</span>
+  </div>
+</footer>
+
+<script>
+  // 화면에 들어오는 요소를 차례로 떠오르게 한다.
+  const items = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window) {
+    const seen = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const siblings = [...entry.target.parentElement.children].filter((el) => el.classList.contains('reveal'));
+        entry.target.style.transitionDelay = `${Math.min(siblings.indexOf(entry.target), 5) * 70}ms`;
+        entry.target.classList.add('in');
+        seen.unobserve(entry.target);
+      });
+    }, { threshold: 0.15 });
+    items.forEach((el) => seen.observe(el));
+  } else {
+    items.forEach((el) => el.classList.add('in'));
+  }
+</script>
+</body>
+</html>
