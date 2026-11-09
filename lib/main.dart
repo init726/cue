@@ -1403,6 +1403,12 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
       _message('종료 시간이 시작 시간보다 빨라요.');
       return;
     }
+    // 서버는 지난 회차를 걸러 주지만, 직접 고른 날짜·시간이 이미 지났을 수 있다.
+    if (!endsAt!.isAfter(DateTime.now())) {
+      _message('이미 끝난 시간이에요. 날짜와 시간을 다시 확인해 주세요.');
+      unawaited(candidate!.period != null ? _planPeriodVisit() : _editSchedule(forced: true));
+      return;
+    }
     final selected = selectedSession == null || selectedSession! >= candidate!.sessions.length
         ? null : candidate!.sessions[selectedSession!];
     final printedMidnight = selected?.timeText.contains('00:00') == true ||
