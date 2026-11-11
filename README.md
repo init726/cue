@@ -832,8 +832,21 @@ curl -X POST http://localhost:8787/v1/catalog/import \
 ```bash
 flutter analyze
 flutter test          # 앱 테스트 30건
-cd server && npm test # 서버 테스트 71건
+cd server && npm test # 서버 테스트 74건
 ```
+
+### 포스터 추출 정확도 측정
+
+포스터 이미지를 한 폴더에 모은 뒤 실행하면 정답을 적을 `answers.template.json`이 만들어집니다. 정답을 채워 `answers.json`으로 저장하고 다시 실행하면 행사 판별, 행사명, 날짜, 시간, 장소별 정확도를 `eval-report.md`로 정리합니다. 이미지는 앱과 같은 조건(가로 최대 1800px, JPEG 품질 78)으로 줄여 보냅니다.
+
+```bash
+cd server
+node scripts/eval-posters.js ~/posters                                        # 로컬 서버
+node scripts/eval-posters.js ~/posters --api https://cue-api-vczh.onrender.com # 배포 서버
+```
+
+배포 서버에 보낼 때는 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` 환경변수가 있어야 익명 사용자로 로그인할 수 있습니다.
+
 
 | 테스트 파일 | 확인하는 것 |
 | --- | --- |
@@ -857,3 +870,4 @@ cd server && npm test # 서버 테스트 71건
 | `server/test/community.test.js`, `peers.test.js`, `community-postgres.test.js` | 공유와 비슷한 사용자 |
 | `server/test/cloud-store.test.js`, `migration.test.js`, `reset.test.js` | Supabase 저장소 규칙, 기존 데이터 이전, 관심사 초기화 |
 | `server/test/recommend-api.test.js`, `demo.test.js` | 추천 API와 시연 모드 |
+| `server/test/eval-posters.test.js` | 정확도 측정 스크립트의 채점 규칙 |
