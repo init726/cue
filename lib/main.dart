@@ -30,6 +30,7 @@ import 'cue_schedule_agent.dart';
 import 'cue_splash.dart';
 import 'cue_travel_estimator.dart';
 import 'cue_upcoming.dart';
+import 'cue_wide_frame.dart';
 import 'saved_event_editor.dart';
 
 final cueThemeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
@@ -1844,7 +1845,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
     if (loading) return CueSplash();
     return Scaffold(
       body: SafeArea(
-        child: Column(
+        child: CueWideFrame(child: Column(
           children: [
             _header(),
             if (apiError != null)
@@ -1881,11 +1882,11 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
               ),
             )),
           ],
-        ),
+        )),
       ),
       bottomNavigationBar: SafeArea(
         minimum: EdgeInsets.fromLTRB(14, 0, 14, 10),
-        child: Container(
+        child: CueWideFrame(child: Container(
           decoration: BoxDecoration(
             color: surface,
             borderRadius: BorderRadius.circular(24),
@@ -1920,7 +1921,7 @@ class _CueHomeState extends State<CueHome> with WidgetsBindingObserver {
           ),
             ],
           ),
-        ),
+        )),
       ),
     );
   }

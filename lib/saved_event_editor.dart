@@ -2,6 +2,7 @@ import 'package:device_calendar/device_calendar.dart' as calendar;
 import 'package:flutter/material.dart';
 
 import 'cue_categories.dart';
+import 'cue_wide_frame.dart';
 import 'cue_schedule_fields.dart';
 
 class SavedEventDraft {
@@ -160,7 +161,7 @@ class _SavedEventEditorState extends State<SavedEventEditor> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text('저장한 일정 수정')),
     body: SafeArea(
-      child: ListView(
+      child: CueWideFrame(child: ListView(
         padding: EdgeInsets.all(20),
         children: [
           Text(
@@ -225,7 +226,7 @@ class _SavedEventEditorState extends State<SavedEventEditor> {
             label: Text('변경 내용 저장'),
           ),
         ],
-      ),
+      )),
     ),
   );
 }
